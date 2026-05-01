@@ -212,3 +212,99 @@ h3 { font-size: .95rem; font-weight: 500; margin: 0 0 .5rem; }
 /* Compare hero */
 .compare-hero { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.5rem; align-items: center; }
 .compare-vs { font-size: 1.5rem; font-weight: 700; color: var(--text-muted); text-align: center; }
+
+/* ── Forward Framework ──────────────────────────────────────────────────── */
+.forward-framework-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 4px;
+  margin: 1rem 0;
+}
+.forward-framework-table th,
+.forward-framework-table td {
+  padding: .875rem 1rem;
+  border-radius: 6px;
+  vertical-align: top;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.forward-framework-table th {
+  background: var(--surface);
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: .85rem;
+  text-align: left;
+}
+.forward-framework-table td {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.forward-framework-table td.scenario-pessimistic {
+  border-left: 2px solid var(--down-color);
+}
+.forward-framework-table td.scenario-neutral {
+  border-left: 2px solid var(--text-muted);
+}
+.forward-framework-table td.scenario-optimistic {
+  border-left: 2px solid var(--up-color);
+}
+.forward-framework-note {
+  margin-top: .75rem;
+  font-size: .8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Drill Deeper ───────────────────────────────────────────────────────── */
+.drill-deeper {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+.drill-deeper-intro {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+}
+.drill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .75rem;
+}
+.drill-card {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 120ms, transform 120ms;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+}
+.drill-card.available:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.drill-card.coming-soon { opacity: .65; }
+.drill-card.coming-soon:hover { border-color: var(--text-muted); }
+.drill-card-icon { font-size: 1.5rem; }
+.drill-card-title { font-weight: 600; font-size: 1rem; }
+.drill-card-desc {
+  color: var(--text-muted);
+  font-size: .875rem;
+  line-height: 1.4;
+}
+.drill-card-tag {
+  position: absolute;
+  top: .75rem;
+  right: .75rem;
+  padding: .125rem .5rem;
+  background: var(--text-muted);
+  color: var(--surface);
+  border-radius: 4px;
+  font-size: .7rem;
+  font-weight: 600;
+}

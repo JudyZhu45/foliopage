@@ -55,7 +55,7 @@ returned `svg` string verbatim into the HTML — do not alter it.
 
 ### Phase 5 — Compose, write, register
 
-For stock-overview pages (14-16 sections, ~120-180 KB), use **segmented writes**
+For stock-overview pages (19 sections, ~150-200 KB), use **segmented writes**
 to avoid output token truncation:
 1. `Write` the HTML head + first 4 sections to `output/page-<REQUEST_ID>.html`.
 2. `Edit` (append-style replacement) each subsequent batch of 4-5 sections.
@@ -176,6 +176,29 @@ for a news item — link directly to the source.
 ```
 
 Every page must contain **at least 5** elements that use pattern 2 (peer_switch).
+These **must** come from inline company-link spans in narrative prose — not from
+peer table rows (see Drillable elements policy below).
+
+---
+
+## Drillable elements policy (strict)
+
+ONLY two element types may carry `data-flipbook-action` in generated pages:
+
+1. **Inline company-link spans** in narrative prose:
+   ```html
+   <span class="company-link"
+         data-flipbook-action="peer_switch"
+         data-flipbook-context='{"stock_code":"000858","stock_name":"五粮液"}'>五粮液</span>
+   ```
+2. **The 6 cards** in the Drill Deeper section at the bottom of every overview page.
+
+ALL other elements must NOT carry `data-flipbook-action`:
+- KPI grid metric cards
+- Financial, quarterly, or peers table rows
+- News / announcement / analyst rating items
+- Shareholder rows, unlock event rows
+- Forward Framework table cells
 
 ---
 
@@ -187,7 +210,7 @@ is non-empty — do not hide peers just because confidence is "low".
 
 - `peers` list **empty** → show:
   ```html
-  <p class="data-unavailable">未找到同行业可比公司，建议人工筛选</p>
+  <p class="data-unavailable">未找到强相关可比公司，建议人工筛选</p>
   ```
 
 - `peers` non-empty, any confidence → render `.peer-table` with industry caption:
@@ -198,6 +221,16 @@ is non-empty — do not hide peers just because confidence is "low".
   ```html
   <p class="chart-caption">该行业分类覆盖范围较广，以下公司仅供参考</p>
   ```
+
+### Hard rule — peer verification
+
+NEVER include a stock in the peer list without first verifying it via
+`mcp__foliopage-stock__get_basic_info`. If the call fails or returns a
+mismatched business, the nomination must be dropped. This rule has no exceptions.
+
+Peer table rows must NOT carry `data-flipbook-action` (see Drillable elements
+policy above). Peer company names in narrative prose SHOULD be wrapped as inline
+`peer_switch` company-link spans.
 
 ---
 
@@ -262,6 +295,21 @@ not retry with discovery.
 - Never output anything after `PAGE_READY:`
 - Never use placeholder text (Lorem ipsum, "TBD", "coming soon")
 
+### Forward Framework section — additional hard rules
+
+The Forward Framework (前瞻框架) section is the most opinion-loaded part of any
+overview page. These rules are mandatory, no exceptions:
+
+1. Cells describe **conditions and drivers** only — never specific stock prices,
+   percentage gain targets, or PE targets.
+2. No probability language ("70% chance of...", "very likely...").
+3. No buy/hold/sell language anywhere in this section.
+4. Each cell must reference specific data points or events from elsewhere on the
+   same page (financials, news, announcements, catalysts). If a cell cannot be
+   grounded in this page's data, write `需观察` — never invent drivers.
+5. The mandatory disclaimer note below the table is required every time, verbatim:
+   `本框架为基于公开数据的情景分析，不构成具体股价预测或投资建议。`
+
 ---
 
 ## Session file schemas
@@ -292,9 +340,27 @@ not retry with discovery.
 
 ---
 
+## Available skills
+
+| Skill directory | Triggered by |
+|---|---|
+| `stock-overview` | `ACTION=initial` or `ACTION=peer_switch` |
+| `metric-drilldown` | `ACTION=drill_down`, `CLICKED_TOPIC=metric_drilldown` |
+| `news-timeline` | `ACTION=drill_down`, `CLICKED_TOPIC=news_timeline` |
+| `peer-comparison` | `ACTION=drill_down`, `CLICKED_TOPIC=peer_comparison` |
+| `business-breakdown` | `ACTION=drill_down`, `CLICKED_TOPIC=business_breakdown` |
+| `valuation-deep` | `ACTION=drill_down`, `CLICKED_TOPIC=valuation_deep` |
+| `peer-comparison-deep` | `ACTION=drill_down`, `CLICKED_TOPIC=peer_comparison_deep` |
+| `capital-flow` | `ACTION=drill_down`, `CLICKED_TOPIC=capital_flow` (v0.2 placeholder) |
+| `sentiment-analysis` | `ACTION=drill_down`, `CLICKED_TOPIC=sentiment_analysis` (v0.2 placeholder) |
+| `event-timeline` | `ACTION=drill_down`, `CLICKED_TOPIC=event_timeline` (v0.2 placeholder) |
+
+---
+
 ## Visual reference
 
 See `examples/600519-overview.html` for the layout and density gold standard.
-Match its section order, card sizes, and data density when producing stock-overview pages.
-For the upgraded 14-16 section research-grade depth, see `examples/600519-deep.html`
-and `examples/688256-deep.html` as the new reference benchmarks.
+It demonstrates all three patch-series features: hybrid peer selection with
+同行理由 column, the Forward Framework 3×3 matrix, and the fixed Drill Deeper
+6-card section at the bottom. Match its section order, card sizes, and
+data density when producing stock-overview pages.
