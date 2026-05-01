@@ -239,6 +239,27 @@ class TestPrompts:
         assert "gross_margin" in prompt
         assert "metric-drilldown" in prompt
 
+    @pytest.mark.parametrize("topic,expected_skill", [
+        ("business_breakdown",    "business-breakdown"),
+        ("valuation_deep",        "valuation-deep"),
+        ("peer_comparison_deep",  "peer-comparison-deep"),
+        ("capital_flow",          "capital-flow"),
+        ("sentiment_analysis",    "sentiment-analysis"),
+        ("event_timeline",        "event-timeline"),
+        ("gross_margin",          "metric-drilldown"),   # legacy fallback
+        ("rd_intensity",          "metric-drilldown"),   # legacy fallback
+    ])
+    def test_drilldown_skill_routing(self, topic: str, expected_skill: str) -> None:
+        prompt = build_drilldown_prompt(
+            request_id="req_skill",
+            stock_query="600519",
+            clicked_topic=topic,
+            clicked_context={},
+        )
+        assert f"Use the {expected_skill} skill." in prompt
+        assert "ACTION: drill_down" in prompt
+        assert f"CLICKED_TOPIC: {topic}" in prompt
+
     def test_peer_switch_prompt(self) -> None:
         prompt = build_peer_switch_prompt(
             request_id="req_003",

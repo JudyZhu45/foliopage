@@ -328,6 +328,33 @@
           }
         } catch { /* error shown in status bar */ }
 
+      } else if ([
+        'business_breakdown', 'valuation_deep', 'peer_comparison_deep',
+        'capital_flow', 'sentiment_analysis', 'event_timeline',
+      ].includes(action)) {
+        // Drill Deeper cards — route as drill_down with clicked_topic = action name
+        const { stock_code, stock_name } = ctx;
+        const labels = {
+          business_breakdown: '业务拆解', valuation_deep: '估值三角',
+          peer_comparison_deep: '同行对比', capital_flow: '资金流向',
+          sentiment_analysis: '情绪分析', event_timeline: '事件时间线',
+        };
+        const label = labels[action] || action;
+        try {
+          const data = await generate(
+            'drill_down',
+            { stock_code, clicked_topic: action,
+              clicked_context: { stock_code, stock_name } },
+            `正在生成 ${label}…`,
+          );
+          if (!data.error) {
+            await loadPage(data.html_url, label);
+          } else {
+            frame.src = data.html_url;
+            hideLoading();
+          }
+        } catch { /* error shown in status bar */ }
+
       } else if (action === 'peer_switch') {
         const { stock_code, stock_name } = ctx;
         try {

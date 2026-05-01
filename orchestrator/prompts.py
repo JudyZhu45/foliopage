@@ -3,6 +3,17 @@ from __future__ import annotations
 
 import json
 
+# Maps clicked_topic values to the skill directory name the agent should load.
+# Topics not listed here fall back to "metric-drilldown".
+_DRILL_SKILL_MAP: dict[str, str] = {
+    "business_breakdown": "business-breakdown",
+    "valuation_deep": "valuation-deep",
+    "peer_comparison_deep": "peer-comparison-deep",
+    "capital_flow": "capital-flow",
+    "sentiment_analysis": "sentiment-analysis",
+    "event_timeline": "event-timeline",
+}
+
 
 def build_initial_prompt(
     *,
@@ -34,6 +45,7 @@ def build_drilldown_prompt(
     """Prompt for a metric drilldown page."""
     if isinstance(clicked_context, dict):
         clicked_context = json.dumps(clicked_context, ensure_ascii=False)
+    skill = _DRILL_SKILL_MAP.get(clicked_topic, "metric-drilldown")
     lines = [
         "ACTION: drill_down",
         f"REQUEST_ID: {request_id}",
@@ -43,7 +55,7 @@ def build_drilldown_prompt(
         f"PARENT_PAGE: {parent_request_id}",
         f"HINT: {hint}",
         "",
-        "Follow CLAUDE.md. Use the metric-drilldown skill.",
+        f"Follow CLAUDE.md. Use the {skill} skill.",
     ]
     return "\n".join(lines)
 
