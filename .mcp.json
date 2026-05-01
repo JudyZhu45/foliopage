@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "foliopage-stock": {
+      "type": "stdio",
+      "command": "/Users/judy459/folioPage/.venv/bin/python",
+      "args": ["-m", "tools.stock_mcp.server"],
+      "cwd": "/Users/judy459/folioPage"
+    },
+    "foliopage-chart": {
+      "type": "stdio",
+      "command": "/Users/judy459/folioPage/.venv/bin/python",
+      "args": ["-m", "tools.chart_mcp.server"],
+      "cwd": "/Users/judy459/folioPage"
+    },
+    "foliopage-news": {
+      "type": "stdio",
+      "command": "/Users/judy459/folioPage/.venv/bin/python",
+      "args": ["-m", "tools.news_mcp.server"],
+      "cwd": "/Users/judy459/folioPage"
+    }
+  }
+}

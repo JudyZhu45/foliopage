@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Foliopage 研究报告</title>
+  <link rel="stylesheet" href="/static/foliopage.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+      min-height: 3rem;
+    }
+    .topbar-logo {
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+      text-decoration: none;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .topbar-divider {
+      width: 1px;
+      height: 1.25rem;
+      background: var(--border);
+    }
+    .search-mini {
+      display: flex;
+      gap: 0.4rem;
+      flex: 1;
+      max-width: 360px;
+    }
+    .search-mini input {
+      flex: 1;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .search-mini input:focus { border-color: var(--accent); }
+    .search-mini button {
+      padding: 0.35rem 0.75rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .search-mini button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* Breadcrumb back links */
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .breadcrumb a {
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb-sep { color: var(--text-muted); }
+
+    /* Status bar */
+    .status-bar {
+      padding: 0.25rem 1rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      display: none;
+    }
+    .status-bar.visible { display: block; }
+    .status-bar.error { color: var(--down-color, #e74c3c); }
+
+    /* ── Loading overlay ── */
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      gap: 1rem;
+      z-index: 10;
+    }
+    .loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 2.5rem;
+      height: 2.5rem;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* ── Report iframe ── */
+    .report-wrapper {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+    }
+    #reportFrame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <a class="topbar-logo" href="/">Foliopage</a>
+    <div class="topbar-divider"></div>
+    <form class="search-mini" id="miniSearch">
+      <input id="miniQuery" type="text" placeholder="新的研究查询…" autocomplete="off">
+      <button type="submit" id="miniBtn">研究</button>
+    </form>
+    <div class="topbar-divider"></div>
+    <nav class="breadcrumb" id="breadcrumb"></nav>
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <div class="report-wrapper">
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <div class="loading-msg" id="loadingMsg">正在生成研究报告…</div>
+    </div>
+    <iframe id="reportFrame" title="研究报告" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+
+  <script>
+    // ── State ──────────────────────────────────────────────────────────────────
+    const params = new URLSearchParams(location.search);
+    let sessionId = params.get('session');
+    let currentUrl = params.get('url');
+
+    const frame = document.getElementById('reportFrame');
+    const overlay = document.getElementById('loadingOverlay');
+    const loadingMsg = document.getElementById('loadingMsg');
+    const statusBar = document.getElementById('statusBar');
+    const breadcrumb = document.getElementById('breadcrumb');
+    const miniQuery = document.getElementById('miniQuery');
+    const miniBtn = document.getElementById('miniBtn');
+
+    // Page stack for breadcrumb
+    const pageStack = [];  // [{label, url}]
+
+    // Last request — tracked so the retry button can re-submit it
+    let lastRequest = { action: null, context: null, loadingText: null };
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function showStatus(msg, isError = false) {
+      statusBar.textContent = msg;
+      statusBar.className = 'status-bar visible' + (isError ? ' error' : '');
+    }
+    function hideStatus() {
+      statusBar.className = 'status-bar';
+    }
+    function showLoading(msg = '正在生成研究报告…') {
+      loadingMsg.textContent = msg;
+      overlay.classList.remove('hidden');
+    }
+    function hideLoading() {
+      overlay.classList.add('hidden');
+    }
+
+    function renderBreadcrumb() {
+      breadcrumb.innerHTML = '';
+      pageStack.forEach((entry, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'breadcrumb-sep';
+          sep.textContent = '›';
+          breadcrumb.appendChild(sep);
+        }
+        if (i < pageStack.length - 1) {
+          const a = document.createElement('a');
+          a.textContent = entry.label;
+          a.addEventListener('click', () => navigateBack(i));
+          breadcrumb.appendChild(a);
+        } else {
+          const span = document.createElement('span');
+          span.textContent = entry.label;
+          breadcrumb.appendChild(span);
+        }
+      });
+    }
+
+    function navigateBack(idx) {
+      pageStack.splice(idx + 1);
+      const entry = pageStack[idx];
+      frame.src = entry.url;
+      renderBreadcrumb();
+      hideStatus();
+    }
+
+    async function loadPage(url, label) {
+      showLoading();
+      frame.src = url;
+      pageStack.push({ label: label || url, url });
+      renderBreadcrumb();
+      // iframe onload will call hideLoading
+    }
+
+    async function generate(action, context, loadingText, opts = {}) {
+      showLoading(loadingText || '正在生成研究报告…');
+      miniBtn.disabled = true;
+      hideStatus();
+
+      // Track for retry
+      lastRequest = { action, context, loadingText };
+
+      try {
+        const body = {
+          action,
+          session_id: sessionId,
+          context,
+          force_refresh: opts.force_refresh || false,
+        };
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(err.detail || res.statusText);
+        }
+
+        const data = await res.json();
+        sessionId = data.session_id;
+        return data;
+      } catch (err) {
+        hideLoading();
+        showStatus(`错误：${err.message}`, true);
+        throw err;
+      } finally {
+        miniBtn.disabled = false;
+      }
+    }
+
+    // ── iframe load ────────────────────────────────────────────────────────────
+    frame.addEventListener('load', () => {
+      hideLoading();
+      // Inject flipbook.js click interceptor into the iframe document so that
+      // [data-flipbook-action] elements send postMessages to this parent frame.
+      // This handles both: pages that already have the <script> tag (no-op due
+      // to the querySelector guard) and older pages that were generated before
+      // the tag was added to the HTML shell template.
+      try {
+        const doc = frame.contentDocument;
+        if (doc && !doc.querySelector('script[src*="flipbook"]')) {
+          const s = doc.createElement('script');
+          s.src = '/static/flipbook.js';
+          doc.head.appendChild(s);
+        }
+      } catch (_) {
+        // Cross-origin or sandbox restriction — flipbook.js must be included
+        // directly in the page's <script> tag for this to work in that case.
+      }
+    });
+
+    // ── postMessage from iframe (drilldown / peer_switch) ─────────────────────
+    window.addEventListener('message', async (event) => {
+      if (event.source !== frame.contentWindow) return;
+
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return;
+
+      const action = msg['data-flipbook-action'];
+      if (!action) return;
+
+      const ctx = msg['data-flipbook-context'] || {};
+
+      if (action === 'drill_down' || action === 'drilldown') {
+        const { stock_code, clicked_topic, clicked_context } = ctx;
+        try {
+          const data = await generate(
+            'drill_down',
+            { stock_code, clicked_topic, clicked_context: clicked_context || {} },
+            `正在深入分析 ${clicked_topic}…`,
+          );
+          // Error pages: render in iframe but do NOT push to page stack
+          if (!data.error) {
+            await loadPage(data.html_url, clicked_topic || stock_code);
+          } else {
+            frame.src = data.html_url;
+            hideLoading();
+          }
+        } catch { /* error shown in status bar */ }
+
+      } else if (action === 'peer_switch') {
+        const { stock_code, stock_name } = ctx;
+        try {
+          const data = await generate(
+            'peer_switch',
+            { stock_code, stock_name },
+            `正在切换到 ${stock_name || stock_code}…`,
+          );
+          if (!data.error) {
+            await loadPage(data.html_url, stock_name || stock_code);
+          } else {
+            frame.src = data.html_url;
+            hideLoading();
+          }
+        } catch { /* error shown in status bar */ }
+
+      } else if (action === 'back') {
+        if (pageStack.length > 1) {
+          navigateBack(pageStack.length - 2);
+        }
+
+      } else if (action === 'retry') {
+        // Error page retry button: re-submit last request with force_refresh
+        if (lastRequest.action) {
+          try {
+            const data = await generate(
+              lastRequest.action,
+              lastRequest.context,
+              '正在重新生成…',
+              { force_refresh: true },
+            );
+            if (!data.error) {
+              await loadPage(data.html_url, lastRequest.loadingText || data.request_id);
+            } else {
+              frame.src = data.html_url;
+              hideLoading();
+            }
+          } catch { /* error shown in status bar */ }
+        }
+      }
+    });
+
+    // ── Mini search bar (new query in same tab) ────────────────────────────────
+    document.getElementById('miniSearch').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = miniQuery.value.trim();
+      if (!q) return;
+      try {
+        // Reset session for a completely new query
+        sessionId = null;
+        pageStack.length = 0;
+        const data = await generate('initial', { stock_query: q }, `正在研究 ${q}…`);
+        sessionId = data.session_id;
+        // Update URL without reload
+        const p = new URLSearchParams({ session: data.session_id, request: data.request_id, url: data.html_url });
+        history.pushState({}, '', `/report?${p}`);
+        if (!data.error) {
+          await loadPage(data.html_url, q);
+        } else {
+          frame.src = data.html_url;
+          hideLoading();
+        }
+        miniQuery.value = '';
+      } catch { /* error shown */ }
+    });
+
+    // ── Initial load ───────────────────────────────────────────────────────────
+    if (currentUrl) {
+      const label = params.get('request') || currentUrl;
+      loadPage(currentUrl, label);
+    } else {
+      hideLoading();
+      showStatus('没有要显示的报告。请从首页开始搜索。');
+    }
+  </script>
+</body>
+</html>
