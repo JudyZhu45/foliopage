@@ -918,6 +918,13 @@ def search_stock(query: str) -> list[dict]:
     return results
 
 
+def _em_symbol(code: str) -> str:
+    """Convert bare A-share code to East Money SH/SZ uppercase prefix format."""
+    if code.startswith("6") or code.startswith("9"):
+        return "SH" + code
+    return "SZ" + code
+
+
 def _search(query: str) -> list[dict]:
     results: list[dict] = []
     q = query.strip()
@@ -1006,6 +1013,356 @@ def _search(query: str) -> list[dict]:
             log.debug("yfinance search fallback failed for '%s': %s", q_upper, exc)
 
     return results[:5]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Tool: get_revenue_breakdown
+# ════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def get_revenue_breakdown(code: str, year: int | None = None) -> dict:
+    """
+    Return revenue breakdown by product line and by region for the most recent
+    annual period (or the specified year).
+    A-shares only. Returns {year, by_product, by_region, available}.
+    """
+    cache_key = f"revbk:{code}:{year or 'latest'}"
+    if hit := _cache_get(cache_key):
+        return hit
+    if not _is_a_share(code):
+        result = {"available": False, "reason": "get_revenue_breakdown supports A-shares only",
+                  "as_of": _ts(), "source": SOURCE}
+    else:
+        try:
+            result = _revenue_breakdown_a(code, year)
+        except Exception as exc:
+            log.warning("get_revenue_breakdown error %s: %s", code, exc)
+            result = {"available": False, "reason": str(exc),
+                      "as_of": _ts(), "source": SOURCE}
+    _cache_set(cache_key, result)
+    return result
+
+
+def _revenue_breakdown_a(code: str, year: int | None) -> dict:
+    symbol = _em_symbol(code)
+    df = _ak(ak.stock_zygc_em, symbol=symbol, retries=1, base_delay=4.0)
+    if df is None or df.empty:
+        return {"available": False, "reason": "stock_zygc_em returned empty",
+                "as_of": _ts(), "source": SOURCE}
+
+    # Parse dates and filter to annual reports (12-31) only
+    df["_date"] = pd.to_datetime(df["报告日期"], errors="coerce")
+    annual = df[df["_date"].dt.month == 12].copy()
+    if annual.empty:
+        annual = df.copy()
+
+    # Pick target year
+    if year is not None:
+        annual = annual[annual["_date"].dt.year == year]
+    else:
+        # Use the most recent annual date
+        latest_date = annual["_date"].max()
+        annual = annual[annual["_date"] == latest_date]
+
+    if annual.empty:
+        return {"available": False, "reason": "no annual breakdown data found",
+                "as_of": _ts(), "source": SOURCE}
+
+    target_date = annual["_date"].iloc[0]
+    report_year = int(target_date.year)
+
+    by_product: list[dict] = []
+    by_region: list[dict] = []
+
+    for _, row in annual.iterrows():
+        clf = str(row.get("分类类型", ""))
+        name = str(row.get("主营构成", ""))
+        rev = _safe_float(row.get("主营收入"))
+        share = _safe_float(row.get("收入比例"))
+        gross_margin = _safe_float(row.get("毛利率"))
+        rev_yi = round(rev / 1e8, 4) if rev else None
+
+        entry = {
+            "name": name,
+            "revenue_yi": rev_yi,
+            "share": round(share, 4) if share is not None else None,
+            "gross_margin": round(gross_margin, 4) if gross_margin is not None else None,
+        }
+
+        if clf == "按产品分类":
+            by_product.append(entry)
+        elif clf == "按地区分类":
+            by_region.append(entry)
+
+    return {
+        "available": True,
+        "year": report_year,
+        "by_product": by_product,
+        "by_region": by_region,
+        "as_of": _ts(),
+        "source": SOURCE,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Tool: get_rd_history
+# ════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def get_rd_history(code: str, years: int = 5) -> dict:
+    """
+    Return R&D expense history for last `years` annual periods.
+    Uses Sina income statement (利润表). A-shares only.
+    Returns {history: [{year, rd_yi, rd_ratio, revenue_yi}]}.
+    """
+    cache_key = f"rd:{code}:{years}"
+    if hit := _cache_get(cache_key):
+        return hit
+    if not _is_a_share(code):
+        result = {"available": False, "reason": "get_rd_history supports A-shares only",
+                  "history": [], "as_of": _ts(), "source": SOURCE}
+    else:
+        try:
+            result = _rd_history_a(code, years)
+        except Exception as exc:
+            log.warning("get_rd_history error %s: %s", code, exc)
+            result = {"available": False, "reason": str(exc),
+                      "history": [], "as_of": _ts(), "source": SOURCE}
+    _cache_set(cache_key, result)
+    return result
+
+
+def _rd_history_a(code: str, years: int) -> dict:
+    symbol = _sina_symbol(code)
+    df = ak.stock_financial_report_sina(stock=symbol, symbol="利润表")
+    if df is None or df.empty:
+        return {"available": False, "reason": "stock_financial_report_sina returned empty",
+                "history": [], "as_of": _ts(), "source": SOURCE}
+
+    # Filter to annual reports: 报告日 ends with 1231
+    date_col = "报告日"
+    df[date_col] = df[date_col].astype(str)
+    annual = df[df[date_col].str.endswith("1231")].copy()
+    annual = annual.sort_values(date_col, ascending=False).head(years)
+
+    if annual.empty:
+        return {"available": False, "reason": "no annual periods in income statement",
+                "history": [], "as_of": _ts(), "source": SOURCE}
+
+    history: list[dict] = []
+    for _, row in annual.iterrows():
+        year_str = str(row[date_col])[:4]
+        rd = _safe_float(row.get("研发费用"))
+        rev = _safe_float(row.get("营业总收入")) or _safe_float(row.get("营业收入"))
+        rd_yi = round(rd / 1e8, 4) if rd is not None else None
+        rev_yi = round(rev / 1e8, 4) if rev else None
+        rd_ratio = round(rd / rev, 4) if (rd is not None and rev and rev != 0) else None
+        history.append({
+            "year": int(year_str),
+            "rd_yi": rd_yi,
+            "rd_ratio": rd_ratio,
+            "revenue_yi": rev_yi,
+        })
+
+    return {
+        "available": len(history) > 0,
+        "history": history,
+        "as_of": _ts(),
+        "source": SOURCE,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Tool: get_top_holders
+# ════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def get_top_holders(code: str) -> dict:
+    """
+    Return top-10 shareholders and north-bound (沪深港通) holdings for an A-share.
+    Returns {as_of_quarter, top_holders, north_bound}.
+    """
+    cache_key = f"holders:{code}"
+    if hit := _cache_get(cache_key):
+        return hit
+    if not _is_a_share(code):
+        result = {"available": False, "reason": "get_top_holders supports A-shares only",
+                  "top_holders": [], "as_of": _ts(), "source": SOURCE}
+    else:
+        try:
+            result = _top_holders_a(code)
+        except Exception as exc:
+            log.warning("get_top_holders error %s: %s", code, exc)
+            result = {"available": False, "reason": str(exc),
+                      "top_holders": [], "as_of": _ts(), "source": SOURCE}
+    _cache_set(cache_key, result)
+    return result
+
+
+def _top_holders_a(code: str) -> dict:
+    # Determine latest quarter-end date
+    today = date.today()
+    # Latest completed quarter end
+    q_month = ((today.month - 1) // 3) * 3  # 0, 3, 6, 9
+    if q_month == 0:
+        q_year, q_month = today.year - 1, 12
+    else:
+        q_year = today.year
+    quarter_date = f"{q_year}{q_month:02d}{'30' if q_month in (6, 9) else '31'}"
+    as_of_quarter = f"{q_year}-Q{(q_month // 3)}"
+
+    sym_lower = _sina_symbol(code)  # sh600519 format
+
+    top_holders: list[dict] = []
+    try:
+        df = _ak(ak.stock_gdfx_top_10_em, symbol=sym_lower, date=quarter_date,
+                 retries=1, base_delay=4.0)
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                name = str(row.get("股东名称", ""))
+                share_type = str(row.get("股份类型", ""))
+                shares_raw = _safe_float(row.get("持股数", 0))
+                pct_raw = _safe_float(row.get("占总股本持股比例"))
+                change_raw = row.get("增减", "")
+                shares_yi = round(shares_raw / 1e8, 4) if shares_raw else None
+                pct = round(pct_raw / 100, 4) if pct_raw is not None else None
+                # Normalise change field
+                if isinstance(change_raw, (int, float)) and not pd.isna(change_raw):
+                    change = f"{'+' if change_raw > 0 else ''}{change_raw:,.0f}"
+                else:
+                    change = str(change_raw) if change_raw and str(change_raw) != "nan" else "未知"
+                top_holders.append({
+                    "name": name,
+                    "type": share_type,
+                    "shares_yi": shares_yi,
+                    "pct": pct,
+                    "change": change,
+                })
+    except Exception as exc:
+        log.debug("stock_gdfx_top_10_em failed for %s: %s", code, exc)
+
+    # North-bound holdings
+    north_bound: dict = {}
+    try:
+        nb_df = _ak(ak.stock_hsgt_individual_em, symbol=code, retries=1, base_delay=4.0)
+        if nb_df is not None and not nb_df.empty:
+            latest = nb_df.sort_values("持股日期", ascending=False).iloc[0]
+            # 30-day trend: compare latest vs 30 days ago
+            nb_df["持股日期"] = pd.to_datetime(nb_df["持股日期"], errors="coerce")
+            cutoff = nb_df["持股日期"].max() - pd.Timedelta(days=30)
+            old = nb_df[nb_df["持股日期"] <= cutoff]
+            shares_now = _safe_float(latest.get("持股数量"))
+            shares_pct = _safe_float(latest.get("持股数量占A股百分比"))
+            if not old.empty:
+                shares_old = _safe_float(old.iloc[-1].get("持股数量"))
+                if shares_now and shares_old:
+                    if shares_now > shares_old * 1.005:
+                        trend_30d = "净增持"
+                    elif shares_now < shares_old * 0.995:
+                        trend_30d = "净减持"
+                    else:
+                        trend_30d = "持平"
+                else:
+                    trend_30d = "未知"
+            else:
+                trend_30d = "未知"
+            north_bound = {
+                "shares_yi": round(shares_now / 1e8, 4) if shares_now else None,
+                "pct": round(shares_pct / 100, 4) if shares_pct is not None else None,
+                "trend_30d": trend_30d,
+            }
+    except Exception as exc:
+        log.debug("stock_hsgt_individual_em failed for %s: %s", code, exc)
+
+    return {
+        "available": len(top_holders) > 0,
+        "as_of": _ts(),
+        "as_of_quarter": as_of_quarter,
+        "top_holders": top_holders,
+        "north_bound": north_bound if north_bound else None,
+        "source": SOURCE,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Tool: get_unlock_schedule
+# ════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+def get_unlock_schedule(code: str, days: int = 365) -> dict:
+    """
+    Return upcoming restricted-share unlock events for an A-share in the next
+    `days` days. Uses East Money detail endpoint filtered by stock code.
+    Returns {events: [{date, shares_yi, shares_pct, type, value_yi_estimated}],
+             total_in_window}.
+    """
+    cache_key = f"unlock:{code}:{days}"
+    if hit := _cache_get(cache_key):
+        return hit
+    if not _is_a_share(code):
+        result = {"available": False, "reason": "get_unlock_schedule supports A-shares only",
+                  "events": [], "total_in_window": 0, "as_of": _ts(), "source": SOURCE}
+    else:
+        try:
+            result = _unlock_schedule_a(code, days)
+        except Exception as exc:
+            log.warning("get_unlock_schedule error %s: %s", code, exc)
+            result = {"available": False, "reason": str(exc),
+                      "events": [], "total_in_window": 0, "as_of": _ts(), "source": SOURCE}
+    _cache_set(cache_key, result)
+    return result
+
+
+def _unlock_schedule_a(code: str, days: int) -> dict:
+    start = date.today()
+    end = start + timedelta(days=days)
+    start_str = start.strftime("%Y%m%d")
+    end_str = end.strftime("%Y%m%d")
+
+    df = _ak(ak.stock_restricted_release_detail_em,
+             start_date=start_str, end_date=end_str,
+             retries=1, base_delay=6.0)
+
+    if df is None or df.empty:
+        return {"available": True, "events": [], "total_in_window": 0,
+                "as_of": _ts(), "source": SOURCE}
+
+    code_col = _df_col(df, "股票代码")
+    if code_col is None:
+        return {"available": False, "reason": "no stock code column in unlock data",
+                "events": [], "total_in_window": 0, "as_of": _ts(), "source": SOURCE}
+
+    filtered = df[df[code_col].astype(str).str.zfill(6) == code].copy()
+    if filtered.empty:
+        return {"available": True, "events": [], "total_in_window": 0,
+                "as_of": _ts(), "source": SOURCE}
+
+    events: list[dict] = []
+    for _, row in filtered.iterrows():
+        date_val = str(row.get("解禁时间", ""))
+        shares_raw = _safe_float(row.get("实际解禁数量") or row.get("解禁数量"))
+        mc_raw = _safe_float(row.get("实际解禁市值"))
+        pct_raw = _safe_float(row.get("占解禁前流通市值比例"))
+        unlock_type = str(row.get("限售股类型", ""))
+        shares_yi = round(shares_raw / 1e8, 4) if shares_raw else None
+        value_yi = round(mc_raw / 1e8, 4) if mc_raw else None
+        events.append({
+            "date": date_val[:10] if date_val else "",
+            "shares_yi": shares_yi,
+            "shares_pct": round(pct_raw, 4) if pct_raw is not None else None,
+            "type": unlock_type,
+            "value_yi_estimated": value_yi,
+        })
+
+    total = sum(e["shares_yi"] or 0 for e in events)
+
+    return {
+        "available": True,
+        "events": events,
+        "total_in_window": round(total, 4),
+        "as_of": _ts(),
+        "source": SOURCE,
+    }
 
 
 # ════════════════════════════════════════════════════════════════════════════

@@ -55,11 +55,15 @@ returned `svg` string verbatim into the HTML — do not alter it.
 
 ### Phase 5 — Compose, write, register
 
-1. Compose the complete HTML in memory (single string).
-2. Write to `output/page-<REQUEST_ID>.html`.
-3. Append one entry to `session/page_stack.json` (schema below).
-4. Write all newly-fetched data into `session/data_cache.json`.
-5. Print **exactly** this line, then stop:
+For stock-overview pages (14-16 sections, ~120-180 KB), use **segmented writes**
+to avoid output token truncation:
+1. `Write` the HTML head + first 4 sections to `output/page-<REQUEST_ID>.html`.
+2. `Edit` (append-style replacement) each subsequent batch of 4-5 sections.
+3. `Edit` the final batch to append remaining sections + `</body></html>`.
+4. `Read` the last 10 lines of the file to verify it ends with `</html>`.
+5. Append one entry to `session/page_stack.json` (schema below).
+6. Write all newly-fetched data into `session/data_cache.json`.
+7. Print **exactly** this line, then stop:
    ```
    PAGE_READY: output/page-<REQUEST_ID>.html
    ```
@@ -229,6 +233,10 @@ not retry with discovery.
 - `mcp__foliopage-stock__get_valuation(code: str) -> dict` — PE_TTM, PB, EV/EBITDA, 10-year PE percentile
 - `mcp__foliopage-stock__get_financials(code: str, period: str = 'annual') -> dict` — 5-period revenue/profit/margin/ROE; period `annual` or `quarterly`
 - `mcp__foliopage-stock__get_peers(code: str, n: int = 5) -> dict` — peers by EM industry board, filtered by market-cap proximity; response includes `industry`, `match_method`, `confidence` ("high"/"medium"/"low"), and `peers` list (may be empty)
+- `mcp__foliopage-stock__get_revenue_breakdown(code: str, year: int | None = None) -> dict` — revenue by product line and by region; returns `{available, year, by_product, by_region}` (A-shares only)
+- `mcp__foliopage-stock__get_rd_history(code: str, years: int = 5) -> dict` — R&D expense history with rd_ratio; returns `{available, history: [{year, rd_yi, rd_ratio, revenue_yi}]}` (A-shares only)
+- `mcp__foliopage-stock__get_top_holders(code: str) -> dict` — top-10 shareholders + north-bound holdings; returns `{available, as_of_quarter, top_holders, north_bound}` (A-shares only)
+- `mcp__foliopage-stock__get_unlock_schedule(code: str, days: int = 365) -> dict` — upcoming restricted-share unlock events in next `days` days; returns `{available, events, total_in_window}` (A-shares only)
 
 ### foliopage-news
 - `mcp__foliopage-news__recent_news(code: str, days: int = 7, limit: int = 10) -> dict` — news headlines and summaries
@@ -288,3 +296,5 @@ not retry with discovery.
 
 See `examples/600519-overview.html` for the layout and density gold standard.
 Match its section order, card sizes, and data density when producing stock-overview pages.
+For the upgraded 14-16 section research-grade depth, see `examples/600519-deep.html`
+and `examples/688256-deep.html` as the new reference benchmarks.

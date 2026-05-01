@@ -503,3 +503,276 @@ def test_peers_yonyou_excludes_maotai():
         assert bad not in peer_codes, (
             f"Unrelated stock {bad} appeared in 用友网络 peers: {peer_codes}"
         )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Unit tests — 4 new tools (mocked, no network)
+# ════════════════════════════════════════════════════════════════════════════
+
+def test_get_revenue_breakdown_non_a_share_returns_unavailable():
+    """get_revenue_breakdown for a non-A-share code returns available=False."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    result = server.get_revenue_breakdown("AAPL")
+    assert result["available"] is False
+    assert "A-shares" in result["reason"]
+
+
+def test_get_revenue_breakdown_parses_product_and_region():
+    """get_revenue_breakdown correctly splits by_product and by_region."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    fake_df = pd.DataFrame([
+        {"股票代码": "600519", "报告日期": "2025-12-31", "分类类型": "按产品分类",
+         "主营构成": "茅台酒", "主营收入": 1.46e11, "收入比例": 0.87,
+         "主营成本": 9.5e9, "成本比例": 0.64, "主营利润": 1.36e11,
+         "利润比例": 0.89, "毛利率": 0.935},
+        {"股票代码": "600519", "报告日期": "2025-12-31", "分类类型": "按地区分类",
+         "主营构成": "国内", "主营收入": 1.64e11, "收入比例": 0.97,
+         "主营成本": 1.44e10, "成本比例": 0.97, "主营利润": 1.50e11,
+         "利润比例": 0.97, "毛利率": 0.912},
+    ])
+
+    with patch.object(server.ak, "stock_zygc_em", return_value=fake_df):
+        result = server.get_revenue_breakdown("600519")
+
+    assert result["available"] is True
+    assert result["year"] == 2025
+    assert len(result["by_product"]) == 1
+    assert result["by_product"][0]["name"] == "茅台酒"
+    assert len(result["by_region"]) == 1
+    assert result["by_region"][0]["name"] == "国内"
+
+
+def test_get_rd_history_non_a_share_returns_empty():
+    """get_rd_history for a non-A-share returns available=False with empty history."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    result = server.get_rd_history("AAPL")
+    assert result["available"] is False
+    assert result["history"] == []
+
+
+def test_get_rd_history_computes_ratio():
+    """get_rd_history correctly computes rd_ratio = rd / revenue."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    fake_df = pd.DataFrame([
+        {"报告日": "20251231", "研发费用": 1.35e9, "营业总收入": 6.5e9},
+        {"报告日": "20241231", "研发费用": 1.22e9, "营业总收入": 1.17e9},
+    ])
+
+    with patch.object(server.ak, "stock_financial_report_sina", return_value=fake_df):
+        result = server.get_rd_history("688256", years=5)
+
+    assert result["available"] is True
+    assert len(result["history"]) == 2
+    h = result["history"][0]
+    assert h["year"] == 2025
+    assert h["rd_yi"] is not None
+    assert h["rd_ratio"] is not None
+    assert abs(h["rd_ratio"] - round(1.35e9 / 6.5e9, 4)) < 1e-6
+
+
+def test_get_top_holders_non_a_share_returns_unavailable():
+    """get_top_holders for a non-A-share returns available=False."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    result = server.get_top_holders("AAPL")
+    assert result["available"] is False
+
+
+def test_get_top_holders_parses_holders():
+    """get_top_holders correctly parses holder list from gdfx mock."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    fake_df = pd.DataFrame([
+        {"名次": 1, "股东名称": "中国贵州茅台酒厂(集团)有限责任公司",
+         "股份类型": "流通A股", "持股数": 679211576, "占总股本持股比例": 54.07,
+         "增减": "不变", "变动比率": float("nan")},
+        {"名次": 2, "股东名称": "香港中央结算有限公司",
+         "股份类型": "流通A股", "持股数": 77511622, "占总股本持股比例": 6.17,
+         "增减": -3527332, "变动比率": -4.35},
+    ])
+
+    with (
+        patch.object(server.ak, "stock_gdfx_top_10_em", return_value=fake_df),
+        patch.object(server.ak, "stock_hsgt_individual_em",
+                     side_effect=RuntimeError("not available")),
+    ):
+        result = server.get_top_holders("600519")
+
+    assert result["available"] is True
+    assert len(result["top_holders"]) == 2
+    assert result["top_holders"][0]["name"] == "中国贵州茅台酒厂(集团)有限责任公司"
+    assert result["top_holders"][0]["pct"] is not None
+    assert result["north_bound"] is None
+
+
+def test_get_unlock_schedule_non_a_share_returns_unavailable():
+    """get_unlock_schedule for a non-A-share returns available=False."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    result = server.get_unlock_schedule("AAPL")
+    assert result["available"] is False
+
+
+def test_get_unlock_schedule_filters_by_code():
+    """get_unlock_schedule returns only events for the requested stock code."""
+    from tools.stock_mcp import server
+
+    with server._LOCK:
+        server._CACHE.clear()
+
+    fake_df = pd.DataFrame([
+        {"序号": 1, "股票代码": "688256", "股票简称": "寒武纪",
+         "解禁时间": "2026-07-22", "限售股类型": "首发原股东限售股",
+         "解禁数量": 1.8e7, "实际解禁数量": 1.8e7,
+         "实际解禁市值": 2.35e10, "占解禁前流通市值比例": 0.084,
+         "解禁前一交易日收盘价": 1307.0, "解禁前20日涨跌幅": 17.96,
+         "解禁后20日涨跌幅": float("nan")},
+        {"序号": 2, "股票代码": "600519", "股票简称": "贵州茅台",
+         "解禁时间": "2026-09-01", "限售股类型": "股权激励限售股",
+         "解禁数量": 5e5, "实际解禁数量": 5e5,
+         "实际解禁市值": 9e8, "占解禁前流通市值比例": 0.001,
+         "解禁前一交易日收盘价": 1800.0, "解禁前20日涨跌幅": 1.2,
+         "解禁后20日涨跌幅": float("nan")},
+    ])
+
+    with patch.object(server.ak, "stock_restricted_release_detail_em",
+                      return_value=fake_df):
+        result = server.get_unlock_schedule("688256", days=365)
+
+    assert result["available"] is True
+    assert len(result["events"]) == 1
+    assert result["events"][0]["type"] == "首发原股东限售股"
+    assert result["total_in_window"] > 0
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Integration tests — 4 new tools (real network)
+# ════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.integration
+def test_get_revenue_breakdown_maotai():
+    """get_revenue_breakdown('600519') should return by_product and by_region."""
+    from tools.stock_mcp.server import get_revenue_breakdown
+
+    result = get_revenue_breakdown("600519")
+
+    assert result["available"] is True, f"Unexpected unavailable: {result}"
+    assert len(result["by_product"]) >= 1
+    assert len(result["by_region"]) >= 1
+    assert result["year"] is not None
+    first = result["by_product"][0]
+    assert first["revenue_yi"] is not None and first["revenue_yi"] > 0
+
+
+@pytest.mark.integration
+def test_get_revenue_breakdown_cambricon():
+    """get_revenue_breakdown('688256') should return available breakdown."""
+    from tools.stock_mcp.server import get_revenue_breakdown
+
+    result = get_revenue_breakdown("688256")
+
+    # 688256 may have limited breakdown data but should not error out
+    assert "error" not in result, f"Unexpected error dict: {result}"
+    assert "available" in result
+
+
+@pytest.mark.integration
+def test_get_rd_history_maotai():
+    """get_rd_history('600519') should return history (may be empty for 茅台)."""
+    from tools.stock_mcp.server import get_rd_history
+
+    result = get_rd_history("600519")
+
+    assert "error" not in result, f"Unexpected error dict: {result}"
+    assert "history" in result
+    # 茅台 may not have R&D expense; just verify structure
+    if result["available"] and result["history"]:
+        h = result["history"][0]
+        assert "year" in h and "rd_yi" in h and "rd_ratio" in h
+
+
+@pytest.mark.integration
+def test_get_rd_history_cambricon():
+    """get_rd_history('688256') should return R&D history with ratios."""
+    from tools.stock_mcp.server import get_rd_history
+
+    result = get_rd_history("688256")
+
+    assert "error" not in result, f"Unexpected error dict: {result}"
+    assert result["available"] is True, f"Expected available, got: {result}"
+    assert len(result["history"]) >= 1
+    h = result["history"][0]
+    assert h["rd_yi"] is not None and h["rd_yi"] > 0
+
+
+@pytest.mark.integration
+def test_get_top_holders_maotai():
+    """get_top_holders('600519') should return at least 5 top shareholders."""
+    from tools.stock_mcp.server import get_top_holders
+
+    result = get_top_holders("600519")
+
+    assert result["available"] is True, f"Unexpected unavailable: {result}"
+    assert len(result["top_holders"]) >= 5
+    h = result["top_holders"][0]
+    assert h["name"] != ""
+    assert h["pct"] is not None
+
+
+@pytest.mark.integration
+def test_get_top_holders_cambricon():
+    """get_top_holders('688256') should return holder data."""
+    from tools.stock_mcp.server import get_top_holders
+
+    result = get_top_holders("688256")
+
+    assert "error" not in result, f"Unexpected error dict: {result}"
+    assert "top_holders" in result
+
+
+@pytest.mark.integration
+def test_get_unlock_schedule_maotai():
+    """get_unlock_schedule('600519') should return a valid schedule (may be empty)."""
+    from tools.stock_mcp.server import get_unlock_schedule
+
+    result = get_unlock_schedule("600519", days=365)
+
+    assert result["available"] is True, f"Unexpected unavailable: {result}"
+    assert "events" in result
+    assert isinstance(result["total_in_window"], float)
+
+
+@pytest.mark.integration
+def test_get_unlock_schedule_cambricon():
+    """get_unlock_schedule('688256') should return unlock events if any exist."""
+    from tools.stock_mcp.server import get_unlock_schedule
+
+    result = get_unlock_schedule("688256", days=365)
+
+    assert "error" not in result, f"Unexpected error dict: {result}"
+    assert "events" in result

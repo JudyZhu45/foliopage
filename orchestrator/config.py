@@ -20,9 +20,9 @@ class Config:
                            str(Path.home() / ".foliopage" / "sessions"))
         )
     )
-    # Agent subprocess timeout (seconds) — dry runs took ~700s, allow 900s
+    # Agent subprocess timeout (seconds) — research-grade depth pages take 20-30 min
     agent_timeout: int = field(
-        default_factory=lambda: int(os.environ.get("FOLIOPAGE_AGENT_TIMEOUT", "900"))
+        default_factory=lambda: int(os.environ.get("FOLIOPAGE_AGENT_TIMEOUT", "1800"))
     )
     # Path to the claude binary
     claude_bin: str = field(

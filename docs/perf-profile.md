@@ -130,6 +130,24 @@ Detailed timing from `sess_9ed8a743...` (Opt 1–5 run, 657s):
 
 ---
 
+## 10. v0.1.1 baseline (post-depth-upgrade)
+
+*To be filled after first successful run of the 16-section research-grade page.*
+
+| Metric | Target | Actual |
+|--------|--------|--------|
+| Total duration (688256) | < 1800s | TBD |
+| Total duration (600519) | < 1800s | TBD |
+| Sections rendered (688256) | 14-16 | TBD |
+| Sections rendered (600519) | 14-16 | TBD |
+| HTML file size (688256) | ~120-180 KB | TBD |
+| Drillable elements (688256) | ≥ 12 | TBD |
+| Sections → data-unavailable (688256) | — | TBD |
+
+*Run `examples/688256-deep.html` and `examples/600519-deep.html` as reference outputs.*
+
+---
+
 ## 9. Path to <120s (architectural changes required)
 
 The 90–120s target requires addressing the 87% thinking overhead:

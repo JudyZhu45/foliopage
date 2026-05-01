@@ -110,7 +110,7 @@ All settings are controlled by environment variables (or a `.env` file at repo r
 
 - Check the terminal where `make dev` is running for errors.
 - The agent transcript is at `~/.foliopage/sessions/<sess_id>/logs/transcript.jsonl`.
-- First-run generation takes 8–12 minutes — this is normal.
+- First-run generation takes 20–30 minutes for the new research-grade depth — this is normal.
 
 **`claude: command not found`**
 

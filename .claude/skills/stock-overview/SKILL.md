@@ -2,407 +2,183 @@
 
 ## When to use
 
-Use when `ACTION=initial`, regardless of the skill name in the prompt.
+Use when `ACTION=initial`.
 
 ---
 
 ## Step 1 — Resolve the stock code
 
-If `STOCK_QUERY` is already a 6-digit number (A-share) or a known US ticker,
-skip this step. Otherwise:
-
-```
-mcp__foliopage-stock__search_stock(query=STOCK_QUERY)
-```
-
-Take the first result's `code` as the canonical code for all subsequent calls.
+If `STOCK_QUERY` is a 6-digit number or known ticker, skip. Otherwise:
+`mcp__foliopage-stock__search_stock(query=STOCK_QUERY)` → take first result's `code`.
 
 ---
 
-## Step 2 — Fetch data (one parallel batch — check data_cache.json first)
+## Step 2 — Fetch data
 
-| Cache key | Tool call |
+**Batch A** (issue all simultaneously — check data_cache.json first):
+
+| Cache key | Tool |
 |---|---|
-| `basic:<code>` | `mcp__foliopage-stock__get_basic_info(code)` |
-| `kline:<code>:1Y` | `mcp__foliopage-stock__get_kline(code, range="1Y")` |
-| `val:<code>` | `mcp__foliopage-stock__get_valuation(code)` |
-| `fin:<code>:annual` | `mcp__foliopage-stock__get_financials(code, period="annual")` |
-| `fin:<code>:quarterly` | `mcp__foliopage-stock__get_financials(code, period="quarterly")` |
-| `peers:<code>:5` | `mcp__foliopage-stock__get_peers(code, n=5)` |
-| `news:<code>:30:10` | `mcp__foliopage-news__recent_news(code, days=30, limit=10)` |
-| `ann:<code>:60` | `mcp__foliopage-news__recent_announcements(code, days=60)` |
-| `analyst:<code>` | `mcp__foliopage-news__analyst_consensus(code)` |
+| `basic:<code>` | `get_basic_info(code)` |
+| `kline:<code>:1Y` | `get_kline(code, range="1Y")` |
+| `val:<code>` | `get_valuation(code)` |
+| `fin:<code>:annual` | `get_financials(code, period="annual")` |
+| `fin:<code>:quarterly` | `get_financials(code, period="quarterly")` |
+| `peers:<code>:5` | `get_peers(code, n=5)` |
+| `news:<code>:30:10` | `recent_news(code, days=30, limit=10)` |
+| `ann:<code>:60` | `recent_announcements(code, days=60)` |
+| `analyst:<code>` | `analyst_consensus(code)` |
+
+**Batch B** (issue all simultaneously after Batch A):
+
+| Cache key | Tool |
+|---|---|
+| `revbk:<code>:latest` | `get_revenue_breakdown(code)` |
+| `rd:<code>:5` | `get_rd_history(code, years=5)` |
+| `holders:<code>` | `get_top_holders(code)` |
+| `unlock:<code>:365` | `get_unlock_schedule(code, days=365)` |
 
 ---
 
 ## Step 3 — Generate charts
 
-Always call (regardless of data availability — pass empty list on missing data):
-```
-mcp__foliopage-chart__kline_svg(ohlcv=kline.bars, width=560, height=220)
-```
-
-If `get_valuation` returned historical PE data:
-```
-mcp__foliopage-chart__pe_band_svg(pe_history=<historical PE list>, current_pe=<pe_ttm>)
-```
-
-Revenue bar chart (use annual periods as items):
-```
-mcp__foliopage-chart__peer_bar_svg(
-    items=[{"code": period_str, "name": year_label, "value": revenue_yi}, ...],
-    metric="营收(亿元)",
-    highlight_code=<latest_period_str>
-)
-```
-
-If peers confidence is "medium" or "high", radar chart:
-```
-mcp__foliopage-chart__comparison_radar_svg(
-    subject={code, name, PE, PB, ROE, gross_margin, net_margin},
-    peers=[same for up to 3 peers],
-    metrics=["PE","PB","ROE","gross_margin","net_margin"]
-)
-```
-Omit any metric where all stocks have `None`.
+Always call (pass `[]` on missing data):
+- `kline_svg(ohlcv=kline.bars, width=560, height=220)`
+- `peer_bar_svg(items=[{code, name, value=revenue_yi},...], metric="营收(亿元)", highlight_code=<latest>)`
+- `pe_band_svg(pe_history=..., current_pe=pe_ttm)` — if PE history available
+- `comparison_radar_svg(subject, peers[:3], metrics)` — if peers confidence medium/high
+- `metric_sparkline_svg(values=[rd_ratio...], width=120, height=32)` — if ≥2 R&D years
 
 ---
 
-## Step 4 — Page structure (12 sections, in order)
+## Step 4 — Page structure (16 sections in order)
 
-All sections get an `id` attribute that matches the in-page nav. The page is a
-single self-contained document — no further generation is needed for any section.
+**Unavailable-section rule**: if a section's primary tool returned `available: false`,
+render a `.section.section-unavailable` block with `<p class="data-unavailable">此维度数据暂未覆盖</p>`.
+Never silently skip (exception: quarterly data may be omitted if tool returns nothing).
 
-### Section 0 — In-page navigation bar
+**Drillable minimum: 12 elements** — see checklist at end.
 
+### Nav bar (Section 0)
 ```html
 <nav class="toc section">
-  <a href="#kpi">关键指标</a>
-  <a href="#price">股价走势</a>
-  <a href="#valuation">估值历史</a>
-  <a href="#financials">财务摘要</a>
-  <a href="#quarterly">季度趋势</a>
-  <a href="#peers">可比公司</a>
-  <a href="#news">近期动态</a>
-  <a href="#analysis">深度分析</a>
+  <a href="#kpi">关键指标</a> <a href="#business">业务概览</a>
+  <a href="#revenue-bk">收入拆分</a> <a href="#price">股价走势</a>
+  <a href="#financials">财务摘要</a> <a href="#quarterly">季度趋势</a>
+  <a href="#rd">研发投入</a> <a href="#valuation">估值分析</a>
+  <a href="#industry">行业背景</a> <a href="#peers">可比公司</a>
+  <a href="#news">近期动态</a> <a href="#announcements">公司公告</a>
+  <a href="#analyst">分析师观点</a> <a href="#holders">股东结构</a>
+  <a href="#catalysts">催化剂与风险</a> <a href="#analysis">深度分析</a>
 </nav>
 ```
 
 ### Section 1 — Hero
-
-```html
-<section class="section hero">
-  <h1>贵州茅台 <span class="code-badge">600519</span></h1>
-  <p class="industry-tag">白酒 · 上交所</p>
-  <div class="hero-stats">
-    <span class="hero-mktcap">市值 <strong>22,800 亿元</strong></span>
-    <span class="data-as-of">截至 2026-04-30 15:00</span>
-  </div>
-</section>
-```
+`{name}` + `{code}` badge + industry tag + market cap + `as_of`.
 
 ### Section 2 — KPI grid (id="kpi")
+Eight metric cards: 当前价, 52周高/低, PE(TTM), PB, 市值, ROE, 毛利率, 股息率.
+Add percentile badge to PE/PB if `pe_10y_percentile` available. No flipbook actions on KPI cards.
 
-Eight metric cards. Metrics in order: 当前价, 52周高/低, PE (TTM), PB, 市值,
-ROE, 毛利率, 股息率.
+### Section 3 — Business overview (id="business") [NEW]
+One dense paragraph: what the company does, core products, end markets, competitive position.
+Synthesise from `basic_info.sector`, `revenue_breakdown.by_product`, and `recent_news`.
+If one segment > 70% of revenue, call it out explicitly.
 
-For PE and PB, add a delta badge showing the 10-year percentile if available
-(`metric-delta-down` if above 70th percentile, `metric-delta-up` if below 30th).
-For ROE and 毛利率, show peer-median context if available.
+### Section 4 — Revenue breakdown (id="revenue-bk") [NEW]
+If `available: false` → section-unavailable. Otherwise:
+- Table of `by_product`: 产品/业务, 收入(亿元), 收入占比, 毛利率. Section heading: `{year}年度`.
+- Sub-table of `by_region` if non-empty: 地区, 收入(亿元), 收入占比.
+- Each product row: `data-flipbook-action="business_drilldown"` + `data-flipbook-context='{"code":"...","segment":"..."}'`
 
-No `data-flipbook-action` on KPI cards — the details are already on this page.
+### Section 5 — Price chart (id="price")
+`kline_svg` verbatim inside `.chart-container`.
 
-```html
-<section class="section" id="kpi">
-  <div class="kpi-grid">
-    <div class="metric-card">
-      <span class="metric-label">当前价</span>
-      <span class="metric-value">1,785.00</span>
-      <span class="metric-delta-down">近1年 -8.3%</span>
-    </div>
-    <!-- repeat for other 7 metrics -->
-  </div>
-</section>
-```
+### Section 6 — Financial summary (id="financials")
+5-year annual table: 年度, 营收(亿元), 增速, 净利润(亿元), 增速, 毛利率, 净利率, ROE.
+Most recent first. Below table: `peer_bar_svg`. One sentence of CAGR context.
 
-### Section 3 — Price chart (id="price")
+### Section 7 — Quarterly trend (id="quarterly")
+Last 5 quarters: 季度, 营收(亿元), YoY%, 净利润(亿元), YoY%. One observation sentence.
 
-```html
-<section class="section" id="price">
-  <h2>股价走势（近 1 年）</h2>
-  <div class="chart-container"><!-- kline_svg verbatim --></div>
-  <p class="chart-caption"><!-- kline_svg.caption --></p>
-</section>
-```
+### Section 8 — R&D investment (id="rd") [NEW]
+If `available: false` → section-unavailable. Otherwise:
+- Table: 年度, 研发费用(亿元), 研发/营收比.
+- Sparkline SVG inline if ≥ 2 years.
+- Narrative `<p>` with `data-flipbook-action="metric_drilldown"` + `data-flipbook-context='{"code":"...","metric":"rd_intensity"}'`.
+- One sentence on trend direction and industry norm (label inferred value with `.data-inferred`).
 
-### Section 4 — Valuation history (id="valuation")
+### Section 9 — Valuation analysis (id="valuation") [EXPANDED]
+Paste `pe_band_svg` if available. Then metric cards for PE, PB, and 10y percentile.
+Peer-median PE/PB from `peers` for comparison. 2–3 sentences: percentile rank, premium/discount to peer median, historical context.
 
-If PE band data is available: paste `pe_band_svg` verbatim. Follow with a
-two-sentence context: current percentile rank + comparison to the peer median PE.
+### Section 10 — Industry context (id="industry") [NEW]
+One paragraph (150–200 words). Source: industry label from `get_peers`, sector from `basic_info`, themes from `recent_news`.
+Cite 2–3 concrete news-backed trends with dates. Wrap competitor names in `peer_switch` links.
+Add `data-flipbook-action="industry_drilldown"` on the industry label span.
 
-If no historical PE data: show a prose table of PE/PB/EV-EBITDA with industry
-median for context (use peer data).
+### Section 11 — Peer comparison (id="peers")
+Apply CLAUDE.md confidence rendering rules. If peers empty: show unavailability note.
+Otherwise:
+1. `comparison_radar_svg` (subject + up to 3 peers)
+2. Peer table — all peers; each `<tr>` is `peer_switch`. Columns: 名称, 市值(亿), PE, PB, 毛利率%, ROE%, 近1年涨跌. Missing values → `—`.
+3. One paragraph: 2–3 sharpest contrasts, cite specific numbers.
 
-```html
-<section class="section" id="valuation">
-  <h2>估值历史</h2>
-  <div class="chart-container"><!-- pe_band_svg verbatim --></div>
-  <p class="chart-caption">当前 PE 28.3×，处于近 10 年 72 分位。行业中位 PE 约 18×。</p>
-</section>
-```
+### Section 12 — Recent news (id="news")
+Top 5–7 items from `recent_news`, descending. Link headline to source URL (new tab). 1–2 sentence summary per item.
 
-### Section 5 — Financial summary table (id="financials")
+### Section 13 — Announcements (id="announcements") [NEW]
+Top 3–5 items from `recent_announcements` as `.ann-item` blocks (date + `.ann-badge` + title + 1-sentence summary).
+If empty: `<p class="data-unavailable">近期无重大公告</p>`.
 
-Five-year annual data. Columns: 年度, 营收(亿元), 营收增速, 净利润(亿元),
-净利润增速, 毛利率, 净利率, ROE. One row per reporting period, most recent first.
+### Section 14 — Analyst consensus (id="analyst")
+Only render if `available: true`. Three sub-sections:
+- A: Rating distribution (买入/增持/中性/减持/卖出 counts as 5 metric cards)
+- B: Target price P25/median/P75 vs current price (upside % with delta badges)
+- C: Recent individual calls table (机构, 评级, 目标价, 日期) — last 90 days, ≤5 rows
 
-Below the table, paste the revenue bar chart:
-```html
-<div class="chart-container" style="margin-top:.75rem"><!-- peer_bar_svg --></div>
-```
+### Section 15 — Shareholder structure (id="holders") [NEW]
+If `available: false` → section-unavailable. Otherwise:
+- Table: 股东名称, 类型, 持股(亿股), 占比, 变动. Each corporate holder row: `data-flipbook-action="holder_drilldown"`.
+- If `north_bound` non-null: annotation card "北向资金: {shares_yi}亿股 ({pct}%), 近30日 {trend_30d}".
+- Show `as_of_quarter` as data freshness note.
 
-One sentence of CAGR context after the chart.
+### Section 16 — Catalysts & risks (id="catalysts") [NEW]
+**A — Unlock schedule**: compact table if `events` non-empty (解禁日期, 股数(亿), 市值估算(亿), 类型); each row `data-flipbook-action="event_drilldown"`. If empty: "未来12个月内无限售股解禁". If `available: false`: `data-unavailable`.
 
-```html
-<section class="section" id="financials">
-  <h2>财务摘要（近 5 年）</h2>
-  <table class="peer-table">
-    <thead>
-      <tr>
-        <th>年度</th>
-        <th>营收(亿元)</th>
-        <th>增速</th>
-        <th>净利润(亿元)</th>
-        <th>增速</th>
-        <th>毛利率</th>
-        <th>净利率</th>
-        <th>ROE</th>
-      </tr>
-    </thead>
-    <tbody>
-      <!-- one <tr> per year, most recent first -->
-    </tbody>
-  </table>
-  <!-- revenue bar chart here -->
-</section>
-```
+**B — Company-specific risks**: max 3 bullets, must be data-backed (from news/announcements/financials). Cite source and date. If only generic risks identifiable, write 0–2 bullets.
 
-### Section 6 — Quarterly trend (id="quarterly")
+### Section 17 — Deep narrative analysis (id="analysis")
+Five to six paragraphs, 400–600 words. Connects business model, financials, valuation, R&D, and risks into a coherent thesis. Include one `<blockquote class="pull-quote">` with the most striking data point. Wrap peer names in `peer_switch` links.
 
-Last 4–6 quarters from `get_financials(period="quarterly")`. Show as a compact
-prose table: 季度, 营收(亿元), YoY%, 净利润(亿元), YoY%. One sentence of
-observation on the most recent quarter vs year-ago.
-
-If quarterly data is unavailable: omit the section entirely (do not show a
-`data-unavailable` placeholder — just skip).
-
-### Section 7 — Peer comparison (id="peers")
-
-Apply confidence rendering rules from CLAUDE.md.
-
-If `peers` is empty: show the unavailability note only.
-
-Otherwise always render the full section:
-1. **Radar chart** — call `comparison_radar_svg` with subject + up to 3 largest peers
-2. **Peer table** — all returned peers
-3. **Differential commentary** — one paragraph highlighting the sharpest contrasts:
-   pick the 2–3 metrics where the subject diverges most from peers (e.g. margin
-   premium, valuation gap, growth rate difference). Cite specific numbers.
-
-Peer table columns: 名称, 市值(亿元), PE(TTM), PB, 毛利率(%), ROE(%), 近1年涨跌幅.
-Each `<tr>` is a `peer_switch` link. Leave cells `—` for missing values.
-Show industry label + confidence note per CLAUDE.md rules.
-
-```html
-<section class="section" id="peers">
-  <h2>可比公司</h2>
-  <!-- confidence note if low -->
-  <div class="chart-container"><!-- comparison_radar_svg --></div>
-  <table class="peer-table">
-    <thead>
-      <tr>
-        <th>名称</th><th>市值(亿)</th><th>PE</th><th>PB</th>
-        <th>毛利率%</th><th>ROE%</th><th>近1年涨跌</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr data-flipbook-action="peer_switch"
-          data-flipbook-context='{"stock_code":"000858","stock_name":"五粮液"}'>
-        <td>五粮液</td><td>6,400</td><td>20.1</td>
-        <td>8.7</td><td>74.3</td><td>25.4</td><td>+3.2%</td>
-      </tr>
-    </tbody>
-  </table>
-  <p class="chart-caption">可比公司参照行业：<strong>白酒</strong></p>
-  <p class="narrative"><!-- differential commentary --></p>
-</section>
-```
-
-### Section 8 — Recent news & announcements (id="news")
-
-All items from `recent_news` (up to 10) followed by items from
-`recent_announcements` (up to 5). Render as a unified timeline — sort all by
-date descending, add a week-header label when the week changes.
-
-News items: link headline to the original URL if present. Open in a new tab.
-Announcements: use `.ann-badge` instead of `.news-source`.
-
-```html
-<section class="section" id="news">
-  <h2>近期动态</h2>
-
-  <p class="week-header">本周</p>
-
-  <article class="news-item">
-    <time>2026-04-28</time>
-    <span class="news-source">东方财富</span>
-    <h3>
-      <a href="https://..." target="_blank" rel="noopener">
-        贵州茅台一季度营收同比增长 12%
-      </a>
-    </h3>
-    <p class="narrative"><!-- 1–2 sentence summary from the tool result --></p>
-  </article>
-
-  <!-- announcements use ann-badge -->
-  <article class="ann-item">
-    <time>2026-04-25</time>
-    <span class="ann-badge">公告</span>
-    <h3>2025 年度利润分配预案：10 派 24.6 元</h3>
-    <p class="narrative"><!-- summary --></p>
-  </article>
-</section>
-```
-
-Show full `summary` field from the tool result (1–2 sentences). If there is no
-summary field, omit the `<p class="narrative">`.
-
-### Section 9 — Analyst consensus (id="analyst")
-
-Only render if `analyst_consensus` returned `available: true`.
-
-Show three sub-sections:
-
-**A — Rating distribution** (5-level counts + overall score)
-
-```html
-<section class="section" id="analyst">
-  <h2>分析师观点（共 {total_coverage} 份报告）</h2>
-
-  <div class="kpi-grid" style="grid-template-columns: repeat(5,1fr)">
-    <div class="metric-card">
-      <span class="metric-label">买入</span>
-      <span class="metric-value metric-delta-up">{ratings.buy}</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">增持</span>
-      <span class="metric-value metric-delta-up">{ratings.outperform}</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">中性</span>
-      <span class="metric-value">{ratings.neutral}</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">减持</span>
-      <span class="metric-value metric-delta-down">{ratings.underperform}</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">卖出</span>
-      <span class="metric-value metric-delta-down">{ratings.sell}</span>
-    </div>
-  </div>
-```
-
-**B — Target price scenarios** (only if `target_prices.sample_size > 0`)
-
-Show three scenarios as metric cards, each displaying the target price and the
-upside/downside percentage vs. current price from `get_basic_info`.
-
-```html
-  <h3 style="margin-top:1.25rem">目标价区间（{sample_size} 家机构）</h3>
-  <div class="kpi-grid" style="grid-template-columns: repeat(3,1fr)">
-    <div class="metric-card">
-      <span class="metric-label">悲观（P25）</span>
-      <span class="metric-value">{pessimistic}</span>
-      <span class="metric-delta-down">{upside_pct_pessimistic}% 较现价</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">中性（中位）</span>
-      <span class="metric-value">{neutral}</span>
-      <span class="{delta_class}">{upside_pct_neutral}% 较现价</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">乐观（P75）</span>
-      <span class="metric-value">{optimistic}</span>
-      <span class="metric-delta-up">{upside_pct_optimistic}% 较现价</span>
-    </div>
-  </div>
-  <p class="chart-caption">区间 {low}–{high} 元 · 均值 {mean} 元</p>
-```
-
-**C — Recent individual calls** (last 90 days, up to 5 rows)
-
-```html
-  <table class="peer-table" style="margin-top:1rem">
-    <thead>
-      <tr><th>机构</th><th>评级</th><th>目标价</th><th>日期</th></tr>
-    </thead>
-    <tbody>
-      <!-- one row per entry in recent_changes -->
-    </tbody>
-  </table>
-</section>
-```
-
-Upside calculation: `round((target - current_price) / current_price * 100, 1)`.
-Use `metric-delta-up` for positive upside, `metric-delta-down` for negative.
-
-### Section 10 — Narrative analysis (id="analysis")
-
-Four to five paragraphs. Permitted content:
-1. Business description and revenue structure
-2. Financial trend analysis (cite CAGR, margin trajectory, ROE stability)
-3. Valuation context — current vs historical percentile, vs peer median
-4. Recent news/announcement themes that are material (cite dates and numbers
-   already shown in the news section — no new numbers)
-5. Key risks visible in the data (declining margins, debt growth, valuation
-   premium vs peers, etc.) — never framed as buy/sell advice
-
-Not permitted: forward projections stated as facts; any number not already
-shown earlier on the page; buy/sell/hold language.
-
-Company name mentions in the narrative: wrap with `peer_switch` links so the
-user can navigate to that stock's overview directly from the prose.
-
-```html
-<section class="section narrative" id="analysis">
-  <h2>深度分析</h2>
-  <p><!-- paragraph 1 --></p>
-  <p><!-- paragraph 2 --></p>
-  <blockquote class="pull-quote"><!-- one key data insight as a pull quote --></blockquote>
-  <p><!-- paragraph 3 --></p>
-  <p><!-- paragraph 4 --></p>
-</section>
-```
-
-### Section 11 — Footer
-
-Standard disclaimer + data-as-of timestamp from the tool results.
+Not permitted: forward projections stated as facts; numbers not already on the page; buy/sell/hold language.
 
 ---
 
-## Drillable elements checklist (minimum 5)
+## Drillable elements checklist (minimum 12)
 
-- [ ] 5 × peer table rows (`peer_switch` to each peer)
-- [ ] Company name mentions in narrative prose (`peer_switch`)
+- [ ] ≥ 5 peer table rows (`peer_switch`)
+- [ ] ≥ 2 company name mentions in prose (`peer_switch`)
+- [ ] ≥ 1 revenue breakdown product row (`business_drilldown`)
+- [ ] ≥ 1 R&D paragraph (`metric_drilldown` on `rd_intensity`)
+- [ ] ≥ 2 top holder rows (`holder_drilldown`)
+- [ ] ≥ 1 industry label (`industry_drilldown`)
+- [ ] ≥ 1 unlock event row (`event_drilldown`) if events exist
 
-KPI cards do **not** need `data-flipbook-action` — their detail is on this page.
-News headlines link directly to source URLs, not to generated pages.
+---
+
+## Segmented HTML write strategy (Phase 5)
+
+Page is ~120–180 KB. Write in 4 segments:
+1. `Write` — `<!DOCTYPE html>` through Section 4 (revenue breakdown)
+2. `Edit` append — Section 5 (price) through Section 9 (valuation)
+3. `Edit` append — Section 10 (industry) through Section 14 (analyst)
+4. `Edit` append — Section 15 (holders) through footer + `</body></html>`
+
+After writing: `Read` last 10 lines to verify ends with `</html>`.
 
 ---
 
 ## Length target
 
-12 sections · ~800–1,000 words narrative · data-dense with full financial tables.
-The page should be comprehensive enough that no follow-up generation is needed for
-standard research questions about this stock.
+16 sections · 1,800–2,400 words narrative · data-dense tables throughout.

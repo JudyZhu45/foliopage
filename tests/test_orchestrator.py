@@ -75,7 +75,7 @@ class TestConfig:
         cfg = Config()
         assert cfg.port == 8081
         assert cfg.host == "127.0.0.1"
-        assert cfg.agent_timeout == 900
+        assert cfg.agent_timeout == 1800
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FOLIOPAGE_PORT", "9999")
