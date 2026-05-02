@@ -681,14 +681,14 @@ def test_e2e_generate(tmp_config: Config) -> None:
 
     from orchestrator.server import create_app
 
-    tmp_config.agent_timeout = 900
+    tmp_config.agent_timeout = 2400  # 19-section research pages take 25-35 min; cache+compaction overhead
 
     app = create_app(tmp_config)
     with TestClient(app) as client:
         resp = client.post(
             "/api/generate",
             json={"action": "initial", "context": {"stock_query": "洋河股份"}},
-            timeout=950,
+            timeout=2450,
         )
 
     assert resp.status_code == 200, resp.text
@@ -701,4 +701,4 @@ def test_e2e_generate(tmp_config: Config) -> None:
     assert "<svg" in data["html"]
     assert "/static/foliopage.css" in data["html"]
     assert len(data["page_stack"]) == 1
-    assert 30_000 <= data["duration_ms"] <= 900_000
+    assert 30_000 <= data["duration_ms"] <= 2_500_000

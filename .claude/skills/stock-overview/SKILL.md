@@ -38,6 +38,10 @@ Otherwise: `search_stock(query=STOCK_QUERY)` → first result's `code`.
 | `holders:<code>` | `get_top_holders(code)` |
 | `unlock:<code>:365` | `get_unlock_schedule(code, days=365)` |
 
+**After Batch B completes**: run Phase 3.5 — write the merged cache via Bash
+(python3 json.dump). Cache keys: basic, kline, val, fin, peers, analyst, revbk,
+rd, holders, unlock. Exclude news/ann (free text corrupts JSON).
+
 ---
 
 ## Step 3 — Generate charts

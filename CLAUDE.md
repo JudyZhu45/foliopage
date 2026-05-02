@@ -48,12 +48,46 @@ initial page: `get_basic_info` + `get_kline` + `get_valuation` + `get_financials
 HTML with class `data-unavailable` and the text "数据暂不可用". Never fill the
 gap with an invented number.
 
+### Phase 3.5 — Persist cache (MANDATORY, before any chart or HTML work)
+
+**Immediately after all Phase 3 tool calls complete**, write newly-fetched
+structured data into `session/data_cache.json`. Do this **before** calling any
+chart tool and **before** writing any HTML.
+
+**Keys to cache:** `basic:*`, `kline:*`, `val:*`, `fin:*`, `peers:*`,
+`analyst:*`, `revbk:*`, `rd:*`, `holders:*`, `unlock:*`.
+
+**Keys to NEVER cache:** `news:*`, `ann:*` — these contain free-text titles
+that may include unescaped quote characters, which corrupt the JSON file.
+
+Use a Bash command with Python's `json` module to write the file — **never**
+use the Write tool directly for data_cache.json, as the Write tool cannot
+escape special characters in string values:
+
+```bash
+python3 << 'PYEOF'
+import json, pathlib
+p = pathlib.Path("session/data_cache.json")
+cache = json.loads(p.read_text()) if p.exists() else {}
+cache.update({
+    # insert key: {"as_of": "...", "data": <value>} pairs here
+})
+p.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+PYEOF
+```
+
+This checkpoint prevents re-fetching after context compaction. After compaction,
+the agent re-reads `session/data_cache.json` to recover structured data.
+
 ### Phase 4 — Generate visuals
 
 Call `mcp__foliopage-chart__*` for every chart the skill requires. Paste the
 returned `svg` string verbatim into the HTML — do not alter it.
 
 ### Phase 5 — Compose, write, register
+
+**Before writing any HTML**: check whether `output/page-<REQUEST_ID>.html`
+already exists and ends with `</html>`. If it does, skip straight to step 7.
 
 For stock-overview pages (19 sections, ~150-200 KB), use **segmented writes**
 to avoid output token truncation:
@@ -62,7 +96,7 @@ to avoid output token truncation:
 3. `Edit` the final batch to append remaining sections + `</body></html>`.
 4. `Read` the last 10 lines of the file to verify it ends with `</html>`.
 5. Append one entry to `session/page_stack.json` (schema below).
-6. Write all newly-fetched data into `session/data_cache.json`.
+6. (Cache already written in Phase 3.5 — skip if no new data was fetched.)
 7. Print **exactly** this line, then stop:
    ```
    PAGE_READY: output/page-<REQUEST_ID>.html

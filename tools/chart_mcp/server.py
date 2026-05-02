@@ -185,9 +185,10 @@ def kline_svg(
     if not ohlcv:
         return {"svg": _NO_DATA_SVG, "caption": "No data", "as_of": _ts()}
 
-    # Downsample to max 120 bars — beyond that, candles are sub-pixel
-    # and the SVG balloon gets too large for tool-result token limits.
-    MAX_BARS = 120
+    # Downsample to max 60 bars (≈weekly for 1Y).
+    # 120 bars → ~72K JSON chars which exceeds Claude's ~71K tool-result limit;
+    # 60 bars → ~46K JSON chars, well within limits and still shows trend clearly.
+    MAX_BARS = 60
     if len(ohlcv) > MAX_BARS:
         step = len(ohlcv) / MAX_BARS
         ohlcv = [ohlcv[int(i * step)] for i in range(MAX_BARS)]
