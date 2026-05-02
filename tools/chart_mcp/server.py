@@ -24,6 +24,10 @@ from typing import Any
 import matplotlib
 
 matplotlib.use("Agg")          # non-interactive backend, must come first
+matplotlib.rcParams['font.sans-serif'] = [
+    'STHeiti', 'Arial Unicode MS', 'PingFang SC', 'DejaVu Sans', 'sans-serif'
+]
+matplotlib.rcParams['axes.unicode_minus'] = False   # fix minus sign rendering
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker

@@ -12,7 +12,7 @@ from `session/page_stack.json` to get `stock_name`.
 
 ## Step 1 — Identify metric category
 
-| `metric` value in context | Category |
+| `metric` value | Category |
 |---|---|
 | `PE_TTM`, `PB`, `PS_TTM` | valuation |
 | `ROE`, `gross_margin`, `net_margin` | profitability |
@@ -23,135 +23,96 @@ from `session/page_stack.json` to get `stock_name`.
 
 ## Step 2 — Fetch data (check data_cache.json first)
 
-| Category | Cache key | Tool call |
+| Category | Cache key | Tool |
 |---|---|---|
-| valuation | `val:<code>` | `mcp__foliopage-stock__get_valuation(code)` |
-| valuation | `fin:<code>:annual` | `mcp__foliopage-stock__get_financials(code, period="annual")` |
-| profitability | `fin:<code>:annual` | `mcp__foliopage-stock__get_financials(code, period="annual")` |
-| income | `fin:<code>:annual` | `mcp__foliopage-stock__get_financials(code, period="annual")` |
-| income | `fin:<code>:quarterly` | `mcp__foliopage-stock__get_financials(code, period="quarterly")` |
-| price | `kline:<code>:5Y` | `mcp__foliopage-stock__get_kline(code, range="5Y")` |
-| all | `peers:<code>:5` | `mcp__foliopage-stock__get_peers(code, n=5)` |
+| valuation | `val:<code>` | `get_valuation(code)` |
+| valuation | `fin:<code>:annual` | `get_financials(code, period="annual")` |
+| profitability | `fin:<code>:annual` | `get_financials(code, period="annual")` |
+| income | `fin:<code>:annual` | `get_financials(code, period="annual")` |
+| income | `fin:<code>:quarterly` | `get_financials(code, period="quarterly")` |
+| price | `kline:<code>:5Y` | `get_kline(code, range="5Y")` |
+| all | `peers:<code>:5` | `get_peers(code, n=5)` |
 
-Always fetch peers so Section 3 (peer comparison) can be populated.
+Issue all applicable calls **simultaneously**.
 
----
-
-## Step 3 — Generate charts
-
-**Valuation metrics (PE_TTM, PB):**
-If `get_valuation` returned `pe_10y_percentile` data, call:
-```
-mcp__foliopage-chart__pe_band_svg(pe_history=<list of {date,pe}>, current_pe=<value>)
-```
-Otherwise, build a `metric_sparkline_svg` from `get_financials` annual EPS/NAV columns.
-
-**Profitability / income metrics:**
-Extract the relevant column across annual periods and call:
-```
-mcp__foliopage-chart__metric_sparkline_svg(values=[...5 years of values...])
-```
-
-**Peer comparison on this metric:**
-```
-mcp__foliopage-chart__peer_bar_svg(
-    items=[{code, name, <metric>: value}, ...],
-    metric="<metric>",
-    highlight_code="<subject code>"
-)
-```
-
-**Price metric:**
-```
-mcp__foliopage-chart__kline_svg(ohlcv=<5Y bars>, width=480, height=200)
-```
+**After results**: write cache via Bash (json.dumps).
+Cache keys: `val:*`, `fin:*`, `kline:*`, `peers:*`.
 
 ---
 
-## Step 4 — Page structure (5 sections)
+## Step 3 — Write output JSON
 
-### Section 1 — Hero
+Write to `output/data-<REQUEST_ID>.json` using Bash + json.dumps.
 
-```html
-<section class="section hero">
-  <p class="breadcrumb">
-    <span class="company-link"
-          data-flipbook-action="peer_switch"
-          data-flipbook-context='{"stock_code":"600519","stock_name":"贵州茅台"}'>
-      贵州茅台 (600519)
-    </span> › PE 历史分位数
-  </p>
-  <h1>PE (TTM)</h1>
-  <div class="kpi-grid" style="--cols:3">
-    <div class="metric-card">
-      <span class="metric-label">当前值</span>
-      <span class="metric-value">28.3</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">1 年前</span>
-      <span class="metric-value">24.1</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">历史分位</span>
-      <span class="metric-value">72%</span>
-    </div>
-  </div>
-</section>
-```
+**Chart dispatch hints** (`metric_category` tells the server which chart to render):
+- `"valuation"` → server renders `pe_band_svg` (from `pe_history`) + `peer_bar_svg`
+- `"profitability"` or `"income"` → server renders `metric_sparkline_svg` + `peer_bar_svg`
+- `"price"` → server renders `kline_svg` (from `kline_bars`)
 
-### Section 2 — Historical chart
-Paste the chart SVG verbatim inside `.chart-container`. Include the caption as
-`<p class="chart-caption">`.
+**`pe_history`**: copy from `get_valuation().pe_history`. Include even if empty.
+**`sparkline_values`**: extract the relevant metric column across 5 annual periods,
+  oldest first. For `gross_margin` → `gross_margin_pct` from each annual row.
+**`kline_bars`**: copy the full `bars` array from `get_kline()`.
+**`peer_bar_items`**: include subject + peers. Use the relevant metric value for each.
 
-### Section 3 — Peer comparison on this metric
-Paste `peer_bar_svg` inside `.chart-container`. Below it, add a one-sentence
-summary: who leads, who trails, where the subject sits.
+### JSON schema
 
-### Section 4 — Narrative
-Two paragraphs:
-1. What the current level means in historical context (use percentile and min/max
-   from the data — do not invent)
-2. What the peer comparison reveals
-
-Do not make forecasts or recommendations.
-
-### Section 5 — Related links
-Drillable links back to overview and to each peer's overview page.
-
-```html
-<section class="section">
-  <h2>相关页面</h2>
-  <ul>
-    <li>
-      <span class="company-link"
-            data-flipbook-action="peer_switch"
-            data-flipbook-context='{"stock_code":"600519","stock_name":"贵州茅台"}'>
-        返回贵州茅台总览
-      </span>
-    </li>
-    <li>
-      <span class="company-link"
-            data-flipbook-action="peer_switch"
-            data-flipbook-context='{"stock_code":"000858","stock_name":"五粮液"}'>
-        五粮液 (000858) 总览
-      </span>
-    </li>
-  </ul>
-</section>
+```json
+{
+  "meta": {
+    "stock_code": "<code>",
+    "stock_name": "<name>",
+    "skill": "metric-drilldown",
+    "as_of": "<ISO datetime>"
+  },
+  "hero": {
+    "industry": "<sector>",
+    "exchange": "<SH|SZ|HK|…>"
+  },
+  "metric_key": "<e.g. PE_TTM>",
+  "metric_display": "<e.g. PE (TTM)>",
+  "metric_category": "<valuation|profitability|income|price>",
+  "metric_current": <current value or null>,
+  "metric_1y_ago": <value 1 year ago or null>,
+  "metric_percentile": <integer or null>,
+  "pe_history": [{"date": "YYYY-MM-DD", "pe": 0.0}],
+  "sparkline_values": [0.0, 0.0, 0.0, 0.0, 0.0],
+  "kline_bars": [
+    {"date": "YYYY-MM-DD", "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0, "volume": 0}
+  ],
+  "peer_bar_metric": "<display label matching metric_key>",
+  "peer_bar_items": [
+    {"code": "<code>", "name": "<name>", "<peer_bar_metric>": <value or null>}
+  ],
+  "history_narrative": "<2 paragraphs: current level in historical context + what drove prior extremes>",
+  "peer_narrative": "<1 paragraph: who leads, who trails, where subject sits>",
+  "related_peers": [
+    {"code": "<code>", "name": "<name>"}
+  ]
+}
 ```
 
 ---
 
-## Drillable elements checklist
+## Step 4 — Register and complete
 
-- [ ] Breadcrumb back to parent stock (peer_switch)
-- [ ] Each peer bar (peer_switch) — add data-flipbook-* to the bar labels if
-  the chart SVG cannot carry them; use a separate peer list below the chart
-- [ ] Related links (≥ 2 peer_switch links)
-- [ ] Minimum 5 drillable elements total
+1. Append to `session/page_stack.json`:
+   ```json
+   {
+     "request_id": "<REQUEST_ID>",
+     "action": "drill_down",
+     "title": "<name> (<code>) <metric_display>",
+     "stock_code": "<code>",
+     "stock_name": "<name>",
+     "skill_used": "metric-drilldown",
+     "summary": "Metric deep-dive: historical chart, peer comparison, narrative",
+     "data_keys_used": ["val:<code>", "fin:<code>:annual", "peers:<code>:5"],
+     "parent_request_id": "<from CLICKED_CONTEXT or page_stack>",
+     "created_at": "<ISO datetime>"
+   }
+   ```
 
----
-
-## Length target
-
-5 sections · ~400–500 words narrative.
+2. Print **exactly** this line, then stop:
+   ```
+   PAGE_READY: output/data-<REQUEST_ID>.json
+   ```

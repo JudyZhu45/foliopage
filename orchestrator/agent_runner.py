@@ -24,9 +24,10 @@ from .security import sanitize_text
 @dataclass
 class AgentResult:
     request_id: str
-    html_path: Path
+    html_path: Path        # path to produced HTML (may be None when json_path is set)
     transcript_path: Path
     duration_seconds: float
+    json_path: Path | None = None  # set when agent produced JSON instead of HTML
 
 
 def run_agent(
@@ -106,17 +107,28 @@ def run_agent(
             transcript_path=transcript_path,
         )
 
-    # Verify output file was produced
-    if not expected_html.exists():
-        raise AgentDidNotProduceOutputError(
-            f"Agent finished successfully but {expected_html.name} was not written "
-            f"(request {request_id})",
+    # Verify output file was produced — check JSON first (new format), then HTML
+    expected_json = workspace / "output" / f"data-{request_id}.json"
+
+    if expected_json.exists():
+        return AgentResult(
+            request_id=request_id,
+            html_path=expected_html,   # may not exist yet; renderer writes it
             transcript_path=transcript_path,
+            duration_seconds=duration,
+            json_path=expected_json,
         )
 
-    return AgentResult(
-        request_id=request_id,
-        html_path=expected_html,
+    if expected_html.exists():
+        return AgentResult(
+            request_id=request_id,
+            html_path=expected_html,
+            transcript_path=transcript_path,
+            duration_seconds=duration,
+        )
+
+    raise AgentDidNotProduceOutputError(
+        f"Agent finished successfully but neither {expected_json.name} nor "
+        f"{expected_html.name} was written (request {request_id})",
         transcript_path=transcript_path,
-        duration_seconds=duration,
     )

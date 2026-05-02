@@ -5,104 +5,265 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Foliopage 研究报告</title>
   <link rel="stylesheet" href="/static/foliopage.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+  <script>
+    // Inline early-apply to prevent FOUC
+    (function () {
+      try {
+        var t = localStorage.getItem('foliopage-theme');
+        if (t === 'dark' || t === 'light') {
+          document.documentElement.setAttribute('data-theme', t);
+        }
+      } catch {}
+    })();
+  </script>
+  <script src="/static/theme.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
+      margin: 0;
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
       background: var(--bg);
       color: var(--text);
-      font-family: system-ui, -apple-system, sans-serif;
     }
 
-    /* ── Top bar ── */
+    /* ── Top bar ───────────────────────────────────────────────────── */
     .topbar {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      padding: 0.5rem 1rem;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      gap: 0.875rem;
+      padding: 0 1rem;
+      height: 44px;
       flex-shrink: 0;
-      min-height: 3rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      z-index: 6;
     }
+
     .topbar-logo {
+      font-family: var(--font-mono);
       font-weight: 700;
-      font-size: 1rem;
-      letter-spacing: -0.01em;
+      font-size: 0.78rem;
+      letter-spacing: 0.12em;
       text-decoration: none;
       color: var(--text);
       white-space: nowrap;
+      transition: color var(--dur-fast) var(--ease-out);
     }
+    .topbar-logo:hover { color: var(--accent); }
+
     .topbar-divider {
       width: 1px;
-      height: 1.25rem;
-      background: var(--border);
+      height: 18px;
+      background: var(--border-strong);
+      flex-shrink: 0;
     }
-    .search-mini {
-      display: flex;
-      gap: 0.4rem;
-      flex: 1;
-      max-width: 360px;
-    }
-    .search-mini input {
-      flex: 1;
-      padding: 0.35rem 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 0.9rem;
-      outline: none;
-    }
-    .search-mini input:focus { border-color: var(--accent); }
-    .search-mini button {
-      padding: 0.35rem 0.75rem;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .search-mini button:disabled { opacity: 0.55; cursor: not-allowed; }
 
-    /* Breadcrumb back links */
+    /* ── Breadcrumb ────────────────────────────────────────────────── */
     .breadcrumb {
       display: flex;
       align-items: center;
-      gap: 0.3rem;
-      font-size: 0.8rem;
+      gap: 0.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
       color: var(--text-muted);
+      letter-spacing: 0.04em;
       overflow-x: auto;
       white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+      scrollbar-width: none;
     }
+    .breadcrumb::-webkit-scrollbar { display: none; }
     .breadcrumb a {
-      color: var(--accent);
+      color: var(--text-secondary);
       text-decoration: none;
       cursor: pointer;
+      padding: 0.2rem 0.45rem;
+      border-radius: var(--radius-xs);
+      transition: background var(--dur-fast) var(--ease-out),
+                  color var(--dur-fast) var(--ease-out);
     }
-    .breadcrumb a:hover { text-decoration: underline; }
-    .breadcrumb-sep { color: var(--text-muted); }
-
-    /* Status bar */
-    .status-bar {
-      padding: 0.25rem 1rem;
+    .breadcrumb a:hover {
+      background: var(--surface-2);
+      color: var(--accent);
+    }
+    .breadcrumb span:not(.breadcrumb-sep) {
+      color: var(--text);
+      font-weight: 500;
+      padding: 0.2rem 0.45rem;
+    }
+    .breadcrumb-sep {
+      color: var(--text-subtle);
       font-size: 0.78rem;
-      color: var(--text-muted);
+    }
+
+    /* ── Mini search ───────────────────────────────────────────────── */
+    .search-mini {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0 0.4rem 0 0.625rem;
+      width: 280px;
+      transition: border-color var(--dur-fast) var(--ease-out),
+                  background var(--dur-fast) var(--ease-out);
+    }
+    .search-mini:focus-within {
+      border-color: var(--accent);
       background: var(--surface);
+      box-shadow: var(--ring);
+    }
+    .search-mini-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .search-mini input {
+      flex: 1;
+      padding: 0.45rem 0;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      outline: none;
+      min-width: 0;
+    }
+    .search-mini input::placeholder {
+      color: var(--text-subtle);
+    }
+    .search-mini button {
+      padding: 0.3rem 0.7rem;
+      background: var(--text);
+      color: var(--bg);
+      border: none;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-sans);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity var(--dur-fast) var(--ease-out);
+      white-space: nowrap;
+    }
+    .search-mini button:hover:not(:disabled) { opacity: 0.85; }
+    .search-mini button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Right meta cluster ────────────────────────────────────────── */
+    .topbar-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .topbar-clock { font-variant-numeric: tabular-nums; }
+    .topbar-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .topbar-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--down-color);
+    }
+    .topbar-status-dot.busy {
+      background: var(--accent);
+      animation: blink 1.2s ease-in-out infinite;
+    }
+    .topbar-status-dot.error {
+      background: var(--up-color);
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    /* Icon button (back / refresh) */
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background var(--dur-fast) var(--ease-out),
+                  color var(--dur-fast) var(--ease-out),
+                  border-color var(--dur-fast) var(--ease-out);
+      flex-shrink: 0;
+    }
+    .icon-btn:hover:not(:disabled) {
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .icon-btn svg { width: 14px; height: 14px; }
+
+    /* ── Indeterminate progress bar (under topbar) ─────────────────── */
+    .progress {
+      position: relative;
+      height: 2px;
+      flex-shrink: 0;
+      background: transparent;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity var(--dur-base) var(--ease-out);
+    }
+    .progress.active { opacity: 1; }
+    .progress::after {
+      content: "";
+      position: absolute;
+      left: 0; top: 0;
+      height: 100%;
+      width: 30%;
+      background: var(--accent);
+      animation: progress-slide 1.4s var(--ease-out) infinite;
+      box-shadow: 0 0 8px var(--accent-bg);
+    }
+    @keyframes progress-slide {
+      0%   { left: -30%; }
+      100% { left: 100%; }
+    }
+
+    /* ── Status bar (errors) ───────────────────────────────────────── */
+    .status-bar {
+      padding: 0.45rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      letter-spacing: 0.02em;
+      color: var(--text-muted);
+      background: var(--surface-2);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
       display: none;
     }
     .status-bar.visible { display: block; }
-    .status-bar.error { color: var(--down-color, #e74c3c); }
+    .status-bar.error {
+      color: var(--up-color);
+      background: var(--up-bg);
+      border-bottom-color: var(--up-border);
+    }
 
-    /* ── Loading overlay ── */
+    /* ── Loading overlay ───────────────────────────────────────────── */
     .loading-overlay {
       position: absolute;
       inset: 0;
@@ -111,57 +272,156 @@
       align-items: center;
       justify-content: center;
       background: var(--bg);
-      gap: 1rem;
+      gap: 1.5rem;
       z-index: 10;
     }
     .loading-overlay.hidden { display: none; }
-    .spinner {
-      width: 2.5rem;
-      height: 2.5rem;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+
+    .loading-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 2rem 2.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      max-width: 420px;
+      text-align: center;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-glyph {
+      width: 36px;
+      height: 36px;
+      position: relative;
+    }
+    .loading-glyph::before,
+    .loading-glyph::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: var(--accent);
+    }
+    .loading-glyph::before {
+      animation: spin-out 1.2s var(--ease-out) infinite;
+    }
+    .loading-glyph::after {
+      inset: 6px;
+      border-top-color: var(--text-muted);
+      animation: spin-out 1.2s var(--ease-out) infinite reverse;
+    }
+    @keyframes spin-out {
+      to { transform: rotate(360deg); }
+    }
     .loading-msg {
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      color: var(--text);
+      letter-spacing: -0.005em;
+    }
+    .loading-sub {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
       color: var(--text-muted);
-      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-top: -0.5rem;
+    }
+    .loading-elapsed {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em;
+      padding: 0.25rem 0.625rem;
+      background: var(--surface-2);
+      border-radius: var(--radius-xs);
+      border: 1px solid var(--border);
     }
 
-    /* ── Report iframe ── */
+    /* ── Report iframe ─────────────────────────────────────────────── */
     .report-wrapper {
       position: relative;
       flex: 1;
       overflow: hidden;
+      background: var(--bg);
     }
     #reportFrame {
       width: 100%;
       height: 100%;
       border: none;
       display: block;
+      background: var(--bg);
+    }
+
+    /* Mobile */
+    @media (max-width: 720px) {
+      .search-mini { width: 180px; }
+      .topbar-meta { display: none; }
+      .topbar-divider:nth-of-type(2) { display: none; }
+    }
+    @media (max-width: 520px) {
+      .search-mini { display: none; }
+      .breadcrumb { font-size: 0.68rem; }
     }
   </style>
 </head>
 <body>
 
   <div class="topbar">
-    <a class="topbar-logo" href="/">Foliopage</a>
+    <a class="topbar-logo" href="/">FOLIOPAGE</a>
     <div class="topbar-divider"></div>
+
+    <button class="icon-btn" id="backBtn" title="返回上一页" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+      </svg>
+    </button>
+
+    <nav class="breadcrumb" id="breadcrumb"></nav>
+
     <form class="search-mini" id="miniSearch">
-      <input id="miniQuery" type="text" placeholder="新的研究查询…" autocomplete="off">
+      <svg class="search-mini-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input id="miniQuery" type="text" placeholder="新查询…" autocomplete="off">
       <button type="submit" id="miniBtn">研究</button>
     </form>
+
     <div class="topbar-divider"></div>
-    <nav class="breadcrumb" id="breadcrumb"></nav>
+
+    <button class="icon-btn" id="exportBtn" title="导出 PDF · 打印当前报告">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    </button>
+
+    <span id="themeToggle"></span>
+
+    <div class="topbar-meta">
+      <span class="topbar-clock" id="topClock"></span>
+      <span class="topbar-status">
+        <span class="topbar-status-dot" id="statusDot"></span>
+        <span id="statusLabel">READY</span>
+      </span>
+    </div>
   </div>
 
+  <div class="progress" id="progress"></div>
   <div class="status-bar" id="statusBar"></div>
 
   <div class="report-wrapper">
     <div class="loading-overlay" id="loadingOverlay">
-      <div class="spinner"></div>
-      <div class="loading-msg" id="loadingMsg">正在生成研究报告…</div>
+      <div class="loading-card">
+        <div class="loading-glyph"></div>
+        <div class="loading-msg" id="loadingMsg">正在生成研究报告</div>
+        <div class="loading-sub">CLAUDE CODE · LOCAL AGENT</div>
+        <div class="loading-elapsed" id="loadingElapsed">00:00</div>
+      </div>
     </div>
     <iframe id="reportFrame" title="研究报告" sandbox="allow-scripts allow-same-origin"></iframe>
   </div>
@@ -175,31 +435,69 @@
     const frame = document.getElementById('reportFrame');
     const overlay = document.getElementById('loadingOverlay');
     const loadingMsg = document.getElementById('loadingMsg');
+    const loadingElapsed = document.getElementById('loadingElapsed');
     const statusBar = document.getElementById('statusBar');
     const breadcrumb = document.getElementById('breadcrumb');
     const miniQuery = document.getElementById('miniQuery');
     const miniBtn = document.getElementById('miniBtn');
+    const backBtn = document.getElementById('backBtn');
+    const progress = document.getElementById('progress');
+    const topClock = document.getElementById('topClock');
+    const statusDot = document.getElementById('statusDot');
+    const statusLabel = document.getElementById('statusLabel');
+    const exportBtn = document.getElementById('exportBtn');
 
-    // Page stack for breadcrumb
-    const pageStack = [];  // [{label, url}]
-
-    // Last request — tracked so the retry button can re-submit it
+    const pageStack = [];
     let lastRequest = { action: null, context: null, loadingText: null };
+    let elapsedTimer = null;
+    let elapsedStart = 0;
+
+    // ── Live clock ────────────────────────────────────────────────────────────
+    function updateClock() {
+      const now = new Date();
+      topClock.textContent =
+        String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0') + ':' +
+        String(now.getSeconds()).padStart(2, '0');
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
 
     // ── Helpers ────────────────────────────────────────────────────────────────
+    function setStatusState(state) {
+      statusDot.className = 'topbar-status-dot' + (state ? ` ${state}` : '');
+      const labels = { busy: 'WORKING', error: 'ERROR', '': 'READY' };
+      statusLabel.textContent = labels[state || ''] || 'READY';
+    }
     function showStatus(msg, isError = false) {
       statusBar.textContent = msg;
       statusBar.className = 'status-bar visible' + (isError ? ' error' : '');
+      if (isError) setStatusState('error');
     }
     function hideStatus() {
       statusBar.className = 'status-bar';
     }
-    function showLoading(msg = '正在生成研究报告…') {
+    function showLoading(msg = '正在生成研究报告') {
       loadingMsg.textContent = msg;
       overlay.classList.remove('hidden');
+      progress.classList.add('active');
+      setStatusState('busy');
+      // start elapsed timer
+      elapsedStart = Date.now();
+      loadingElapsed.textContent = '00:00';
+      clearInterval(elapsedTimer);
+      elapsedTimer = setInterval(() => {
+        const s = Math.floor((Date.now() - elapsedStart) / 1000);
+        loadingElapsed.textContent =
+          String(Math.floor(s / 60)).padStart(2, '0') + ':' +
+          String(s % 60).padStart(2, '0');
+      }, 1000);
     }
     function hideLoading() {
       overlay.classList.add('hidden');
+      progress.classList.remove('active');
+      setStatusState('');
+      clearInterval(elapsedTimer);
     }
 
     function renderBreadcrumb() {
@@ -222,6 +520,7 @@
           breadcrumb.appendChild(span);
         }
       });
+      backBtn.disabled = pageStack.length <= 1;
     }
 
     function navigateBack(idx) {
@@ -232,20 +531,22 @@
       hideStatus();
     }
 
+    backBtn.addEventListener('click', () => {
+      if (pageStack.length > 1) navigateBack(pageStack.length - 2);
+    });
+
     async function loadPage(url, label) {
       showLoading();
       frame.src = url;
       pageStack.push({ label: label || url, url });
       renderBreadcrumb();
-      // iframe onload will call hideLoading
     }
 
     async function generate(action, context, loadingText, opts = {}) {
-      showLoading(loadingText || '正在生成研究报告…');
+      showLoading(loadingText || '正在生成研究报告');
       miniBtn.disabled = true;
       hideStatus();
 
-      // Track for retry
       lastRequest = { action, context, loadingText };
 
       try {
@@ -271,7 +572,7 @@
         return data;
       } catch (err) {
         hideLoading();
-        showStatus(`错误：${err.message}`, true);
+        showStatus(`✕ ${err.message}`, true);
         throw err;
       } finally {
         miniBtn.disabled = false;
@@ -279,13 +580,21 @@
     }
 
     // ── iframe load ────────────────────────────────────────────────────────────
+    function syncIframeTheme() {
+      try {
+        const doc = frame.contentDocument;
+        if (!doc) return;
+        const cur = (window.foliopageTheme && window.foliopageTheme.get()) || 'auto';
+        if (cur === 'auto') {
+          doc.documentElement.removeAttribute('data-theme');
+        } else {
+          doc.documentElement.setAttribute('data-theme', cur);
+        }
+      } catch (_) {}
+    }
+
     frame.addEventListener('load', () => {
       hideLoading();
-      // Inject flipbook.js click interceptor into the iframe document so that
-      // [data-flipbook-action] elements send postMessages to this parent frame.
-      // This handles both: pages that already have the <script> tag (no-op due
-      // to the querySelector guard) and older pages that were generated before
-      // the tag was added to the HTML shell template.
       try {
         const doc = frame.contentDocument;
         if (doc && !doc.querySelector('script[src*="flipbook"]')) {
@@ -293,13 +602,29 @@
           s.src = '/static/flipbook.js';
           doc.head.appendChild(s);
         }
-      } catch (_) {
-        // Cross-origin or sandbox restriction — flipbook.js must be included
-        // directly in the page's <script> tag for this to work in that case.
+      } catch (_) {}
+      syncIframeTheme();
+    });
+
+    // Re-sync iframe whenever shell theme changes
+    window.addEventListener('foliopage:theme', syncIframeTheme);
+
+    // Mount the segmented theme control + export button
+    if (window.foliopageTheme) {
+      window.foliopageTheme.mount(document.getElementById('themeToggle'));
+    }
+    exportBtn.addEventListener('click', () => {
+      try {
+        if (frame.contentWindow) {
+          frame.contentWindow.focus();
+          frame.contentWindow.print();
+        }
+      } catch (err) {
+        showStatus(`✕ 导出失败: ${err.message}`, true);
       }
     });
 
-    // ── postMessage from iframe (drilldown / peer_switch) ─────────────────────
+    // ── postMessage from iframe ────────────────────────────────────────────────
     window.addEventListener('message', async (event) => {
       if (event.source !== frame.contentWindow) return;
 
@@ -317,9 +642,8 @@
           const data = await generate(
             'drill_down',
             { stock_code, clicked_topic, clicked_context: clicked_context || {} },
-            `正在深入分析 ${clicked_topic}…`,
+            `正在深入分析 ${clicked_topic}`,
           );
-          // Error pages: render in iframe but do NOT push to page stack
           if (!data.error) {
             await loadPage(data.html_url, clicked_topic || stock_code);
           } else {
@@ -332,7 +656,6 @@
         'business_breakdown', 'valuation_deep', 'peer_comparison_deep',
         'capital_flow', 'sentiment_analysis', 'event_timeline',
       ].includes(action)) {
-        // Drill Deeper cards — route as drill_down with clicked_topic = action name
         const { stock_code, stock_name } = ctx;
         const labels = {
           business_breakdown: '业务拆解', valuation_deep: '估值三角',
@@ -345,7 +668,7 @@
             'drill_down',
             { stock_code, clicked_topic: action,
               clicked_context: { stock_code, stock_name } },
-            `正在生成 ${label}…`,
+            `正在生成 ${label}`,
           );
           if (!data.error) {
             await loadPage(data.html_url, label);
@@ -361,7 +684,7 @@
           const data = await generate(
             'peer_switch',
             { stock_code, stock_name },
-            `正在切换到 ${stock_name || stock_code}…`,
+            `正在切换到 ${stock_name || stock_code}`,
           );
           if (!data.error) {
             await loadPage(data.html_url, stock_name || stock_code);
@@ -377,13 +700,12 @@
         }
 
       } else if (action === 'retry') {
-        // Error page retry button: re-submit last request with force_refresh
         if (lastRequest.action) {
           try {
             const data = await generate(
               lastRequest.action,
               lastRequest.context,
-              '正在重新生成…',
+              '正在重新生成',
               { force_refresh: true },
             );
             if (!data.error) {
@@ -397,18 +719,16 @@
       }
     });
 
-    // ── Mini search bar (new query in same tab) ────────────────────────────────
+    // ── Mini search ────────────────────────────────────────────────────────────
     document.getElementById('miniSearch').addEventListener('submit', async (e) => {
       e.preventDefault();
       const q = miniQuery.value.trim();
       if (!q) return;
       try {
-        // Reset session for a completely new query
         sessionId = null;
         pageStack.length = 0;
-        const data = await generate('initial', { stock_query: q }, `正在研究 ${q}…`);
+        const data = await generate('initial', { stock_query: q }, `正在研究 ${q}`);
         sessionId = data.session_id;
-        // Update URL without reload
         const p = new URLSearchParams({ session: data.session_id, request: data.request_id, url: data.html_url });
         history.pushState({}, '', `/report?${p}`);
         if (!data.error) {
@@ -421,13 +741,22 @@
       } catch { /* error shown */ }
     });
 
+    // ⌘K to focus mini search
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        miniQuery.focus();
+        miniQuery.select();
+      }
+    });
+
     // ── Initial load ───────────────────────────────────────────────────────────
     if (currentUrl) {
       const label = params.get('request') || currentUrl;
       loadPage(currentUrl, label);
     } else {
       hideLoading();
-      showStatus('没有要显示的报告。请从首页开始搜索。');
+      showStatus('没有要显示的报告 — 请从首页开始搜索');
     }
   </script>
 </body>

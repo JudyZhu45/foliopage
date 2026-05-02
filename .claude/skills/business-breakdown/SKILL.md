@@ -2,8 +2,7 @@
 
 ## When to use
 
-Use when `ACTION=drill_down` and `CLICKED_TOPIC=business_breakdown`
-(triggered by the "业务拆解" card in the Drill Deeper section).
+Use when `ACTION=drill_down` and `CLICKED_TOPIC=business_breakdown`.
 
 ---
 
@@ -15,6 +14,8 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`.
 
 ## Step 2 — Fetch data (check data_cache.json first)
 
+Issue **all 4 calls simultaneously**:
+
 | Cache key | Tool |
 |---|---|
 | `basic:<code>` | `get_basic_info(code)` |
@@ -22,67 +23,92 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`.
 | `fin:<code>:annual` | `get_financials(code, period="annual")` |
 | `peers:<code>:10` | `get_peers(code, n=10)` |
 
-If `revbk` returns `available: false`, render a full-page unavailability
-notice (class `.data-unavailable`) and stop.
+**After results arrive**: write cache via Bash (json.dumps).
+Cache keys: `basic:<code>`, `fin:<code>:annual`, `peers:<code>:10`.
+**Never cache** `revbk:*` (may contain special characters).
+
+If `revbk` returns `available: false`, set `"available": false` in the JSON
+and skip all product/region fields. The renderer will show an unavailability notice.
 
 ---
 
-## Step 3 — Generate charts
+## Step 3 — Write output JSON
 
-- `peer_bar_svg(items=[...], metric="毛利率%", highlight_code=<code>)` —
-  compare gross margin across peers (use `get_peers` data for peer margins)
-- `metric_sparkline_svg(values=[revenue by product trend if multi-year], ...)`
-  if revenue breakdown includes multi-year product data
+Write to `output/data-<REQUEST_ID>.json` using Bash + json.dumps.
+
+**Never invent numbers** — every value must come from a tool result or be `null`.
+
+**`peer_bar_items`**: include subject + top 5 peers from `get_peers`. Use
+`gross_margin_pct` from latest annual financials. If a peer has no margin data,
+set the metric value to `null` (server skips nulls gracefully).
+
+### JSON schema
+
+```json
+{
+  "meta": {
+    "stock_code": "<code>",
+    "stock_name": "<name>",
+    "skill": "business-breakdown",
+    "as_of": "<ISO datetime from basic_info>"
+  },
+  "hero": {
+    "industry": "<sector from basic_info>",
+    "exchange": "<SH|SZ|HK|…>",
+    "as_of": "<date string>"
+  },
+  "available": true,
+  "report_year": <int or null>,
+  "business_overview": "<150-200 words: what the company sells, who buys, what drives pricing. ≥1 [[code|name]] link>",
+  "by_product": [
+    {
+      "segment": "<product/business name>",
+      "revenue_yi": <亿元 or null>,
+      "revenue_pct": <% share or null>,
+      "gross_margin_pct": <% or null>,
+      "yoy_pct": <% or null>
+    }
+  ],
+  "by_region": [
+    {
+      "region": "<region name>",
+      "revenue_yi": <亿元 or null>,
+      "revenue_pct": <% or null>,
+      "yoy_pct": <% or null>
+    }
+  ],
+  "top_segment": "<name of largest segment>",
+  "top_segment_pct": <% or null>,
+  "peer_bar_metric": "毛利率(%)",
+  "peer_bar_items": [
+    {"code": "<code>", "name": "<name>", "毛利率(%)": <gross_margin_pct or null>}
+  ],
+  "structural_analysis": "<3-4 paragraphs separated by \\n\\n: concentration risk, margin mix, growth engine. ≥2 [[code|name]] links>",
+  "pull_quote": "<most striking segment-level data point>"
+}
+```
 
 ---
 
-## Step 4 — Page structure (4 sections)
+## Step 4 — Register and complete
 
-**Drillable policy:** ONLY inline company-link peer_switch spans in
-narrative prose may carry `data-flipbook-action`. No table rows, no cards.
+1. Append to `session/page_stack.json`:
+   ```json
+   {
+     "request_id": "<REQUEST_ID>",
+     "action": "drill_down",
+     "title": "<name> (<code>) 业务拆解",
+     "stock_code": "<code>",
+     "stock_name": "<name>",
+     "skill_used": "business-breakdown",
+     "summary": "Revenue breakdown by product and region, peer margin comparison",
+     "data_keys_used": ["basic:<code>", "fin:<code>:annual", "peers:<code>:10"],
+     "parent_request_id": "<from CLICKED_CONTEXT or page_stack>",
+     "created_at": "<ISO datetime>"
+   }
+   ```
 
-### Section 1 — Business description
-
-One dense paragraph (150–200 words): what the company actually sells,
-who buys it, what drives pricing. Source: `basic_info.sector`,
-`revenue_breakdown.by_product`. Wrap ≥1 competitor name as peer_switch.
-
-### Section 2 — Product / segment breakdown
-
-Table from `by_product`:
-
-| 产品/业务 | 收入(亿元) | 收入占比 | 毛利率 | YoY% |
-|---|---|---|---|---|
-
-If any segment > 70% of revenue, call it out in a `.pull-quote`.
-Peer gross-margin bar chart (`peer_bar_svg`) below the table.
-
-### Section 3 — Regional breakdown
-
-Table from `by_region` (if non-empty):
-
-| 地区 | 收入(亿元) | 收入占比 | YoY% |
-|---|---|---|---|
-
-If region data unavailable: `<p class="data-unavailable">地区拆分数据暂不可用</p>`.
-
-### Section 4 — Structural analysis narrative
-
-3–4 paragraphs, 300–400 words:
-- Revenue concentration risk (HHI or simple top-segment share)
-- Margin mix: which segment drives blended gross margin
-- Growth engine: which segment grew fastest and why (cite news/financials)
-- Wrap peer names as inline peer_switch spans
-
-Include `<blockquote class="pull-quote">` with the most striking
-segment-level data point.
-
----
-
-## Segmented write strategy
-
-Small page (~40–60 KB). Write in 2 segments:
-1. `Write` — head + Sections 1–2
-2. `Edit` append — Sections 3–4 + footer + `</body></html>`
-
-Print `PAGE_READY: output/page-<REQUEST_ID>.html` when done.
+2. Print **exactly** this line, then stop:
+   ```
+   PAGE_READY: output/data-<REQUEST_ID>.json
+   ```

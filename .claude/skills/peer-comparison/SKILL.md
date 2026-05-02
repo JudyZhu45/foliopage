@@ -2,22 +2,23 @@
 
 ## When to use
 
-Use when `ACTION=peer_switch` **or** when `ACTION=initial` and `STOCK_QUERY`
-implies a comparison (e.g. "茅台 vs 五粮液", "compare AAPL and MSFT").
+Use when `ACTION=peer_switch` **and** there is already a subject stock in the
+page stack — i.e., the user is comparing the clicked peer against the original
+stock. Or when `ACTION=initial` and `STOCK_QUERY` implies a comparison
+(e.g. "茅台 vs 五粮液").
 
-- **peer_switch**: `CLICKED_CONTEXT` supplies `stock_code` and
-  `stock_name`. Treat `stock_code` as the subject. Load the parent
-  page's stock from `session/page_stack.json` as the comparison peer.
-- **compare query**: parse both codes from `STOCK_QUERY`. The first is
+- **peer_switch**: `CLICKED_CONTEXT` supplies `stock_code`/`stock_name` for
+  the peer. Load the parent page's stock from `session/page_stack.json` as
   the subject.
+- **compare query**: parse both codes from `STOCK_QUERY`. The first is subject.
 
 ---
 
 ## Step 1 — Resolve both codes
 
-For each code that is a name (not already a digit string or known ticker):
+For any code that is a name (not a digit string or known ticker):
 ```
-mcp__foliopage-stock__search_stock(query=<name>)
+search_stock(query=<name>)
 ```
 
 Variables after this step: `subject_code`, `subject_name`, `peer_code`, `peer_name`.
@@ -26,121 +27,116 @@ Variables after this step: `subject_code`, `subject_name`, `peer_code`, `peer_na
 
 ## Step 2 — Fetch data (check data_cache.json first for each key)
 
-Fetch the same set for **both** subject and peer:
+Issue all **6 calls simultaneously**:
 
-| Cache key pattern | Tool call |
+| Cache key | Tool |
 |---|---|
-| `basic:<code>` | `mcp__foliopage-stock__get_basic_info(code)` |
-| `val:<code>` | `mcp__foliopage-stock__get_valuation(code)` |
-| `fin:<code>:annual` | `mcp__foliopage-stock__get_financials(code, period="annual")` |
+| `basic:<subject_code>` | `get_basic_info(subject_code)` |
+| `val:<subject_code>` | `get_valuation(subject_code)` |
+| `fin:<subject_code>:annual` | `get_financials(subject_code, period="annual")` |
+| `basic:<peer_code>` | `get_basic_info(peer_code)` |
+| `val:<peer_code>` | `get_valuation(peer_code)` |
+| `fin:<peer_code>:annual` | `get_financials(peer_code, period="annual")` |
+
+**After results**: write cache via Bash (json.dumps) for all 6 keys.
 
 ---
 
-## Step 3 — Generate charts
+## Step 3 — Write output JSON
 
-Build the comparison metrics dict for each stock from the fetched data:
+Write to `output/data-<REQUEST_ID>.json` using Bash + json.dumps.
 
-```python
-# Pseudo-code — compute before calling chart tool
-subject_metrics = {
-    "code": subject_code, "name": subject_name,
-    "PE":           valuation["pe_ttm"],
-    "PB":           valuation["pb"],
-    "ROE":          financials latest period["roe"],
-    "gross_margin": financials latest period["gross_margin"],
-    "net_margin":   financials latest period["net_margin"],
+**Omit any radar metric where BOTH stocks have `null`** — don't plot empty axes.
+**`comparison_table`**: one row per metric, ordered by importance.
+
+### JSON schema
+
+```json
+{
+  "meta": {
+    "skill": "peer-comparison",
+    "as_of": "<ISO datetime>"
+  },
+  "subject": {
+    "code": "<code>",
+    "name": "<name>",
+    "industry": "<sector>",
+    "exchange": "<SH|SZ|…>",
+    "market_cap_yi": <亿元 or null>,
+    "pe_ttm": <or null>,
+    "pb": <or null>,
+    "roe_pct": <or null>,
+    "gross_margin_pct": <or null>,
+    "net_margin_pct": <or null>,
+    "revenue_yoy_pct": <% latest annual or null>
+  },
+  "peer": {
+    "code": "<code>",
+    "name": "<name>",
+    "industry": "<sector>",
+    "exchange": "<SH|SZ|…>",
+    "market_cap_yi": <亿元 or null>,
+    "pe_ttm": <or null>,
+    "pb": <or null>,
+    "roe_pct": <or null>,
+    "gross_margin_pct": <or null>,
+    "net_margin_pct": <or null>,
+    "revenue_yoy_pct": <% or null>
+  },
+  "radar_subject": {
+    "code": "<code>",
+    "name": "<name>",
+    "PE": <pe_ttm or null>,
+    "PB": <pb or null>,
+    "ROE": <roe_pct or null>,
+    "gross_margin": <gross_margin_pct or null>,
+    "net_margin": <net_margin_pct or null>
+  },
+  "radar_peer": {
+    "code": "<code>",
+    "name": "<name>",
+    "PE": <or null>,
+    "PB": <or null>,
+    "ROE": <or null>,
+    "gross_margin": <or null>,
+    "net_margin": <or null>
+  },
+  "radar_metrics": ["PE", "PB", "ROE", "gross_margin", "net_margin"],
+  "comparison_table": [
+    {"metric": "PE (TTM)", "subject_value": "<formatted>", "peer_value": "<formatted>"},
+    {"metric": "PB", "subject_value": "...", "peer_value": "..."},
+    {"metric": "ROE (%)", "subject_value": "...", "peer_value": "..."},
+    {"metric": "毛利率 (%)", "subject_value": "...", "peer_value": "..."},
+    {"metric": "净利率 (%)", "subject_value": "...", "peer_value": "..."},
+    {"metric": "市值 (亿元)", "subject_value": "...", "peer_value": "..."},
+    {"metric": "营收增速 (%)", "subject_value": "...", "peer_value": "..."}
+  ],
+  "subject_leads": "<paragraph: where subject outperforms, cite specific numbers>",
+  "peer_leads": "<paragraph: where peer outperforms or is comparable, cite numbers>"
 }
-# same for peer
 ```
-
-Then call:
-```
-mcp__foliopage-chart__comparison_radar_svg(
-    subject=subject_metrics,
-    peers=[peer_metrics],
-    metrics=["PE", "PB", "ROE", "gross_margin", "net_margin"]
-)
-```
-
-Omit any metric where **both** stocks have `None` — don't plot an empty axis.
 
 ---
 
-## Step 4 — Page structure (5 sections)
+## Step 4 — Register and complete
 
-### Section 1 — Hero (side by side)
+1. Append to `session/page_stack.json`:
+   ```json
+   {
+     "request_id": "<REQUEST_ID>",
+     "action": "peer_switch",
+     "title": "<subject_name> vs <peer_name>",
+     "stock_code": "<subject_code>",
+     "stock_name": "<subject_name>",
+     "skill_used": "peer-comparison",
+     "summary": "Side-by-side comparison: radar chart, metric table, narrative",
+     "data_keys_used": ["basic:<subject>", "val:<subject>", "fin:<subject>:annual", "basic:<peer>", "val:<peer>", "fin:<peer>:annual"],
+     "parent_request_id": null,
+     "created_at": "<ISO datetime>"
+   }
+   ```
 
-```html
-<section class="section hero">
-  <div class="compare-hero">
-    <div class="compare-subject">
-      <h1>贵州茅台 <span class="code-badge">600519</span></h1>
-      <p class="industry-tag">白酒 · 上交所</p>
-      <p class="hero-mktcap">市值 <strong>22,800 亿元</strong></p>
-    </div>
-    <div class="compare-vs">VS</div>
-    <div class="compare-peer"
-         data-flipbook-action="peer_switch"
-         data-flipbook-context='{"stock_code":"000858","stock_name":"五粮液"}'>
-      <h2>五粮液 <span class="code-badge">000858</span></h2>
-      <p class="industry-tag">白酒 · 深交所</p>
-      <p class="hero-mktcap">市值 <strong>6,400 亿元</strong></p>
-    </div>
-  </div>
-</section>
-```
-
-### Section 2 — Radar chart
-Paste `comparison_radar_svg` verbatim inside `.chart-container`.
-Caption: metric names, normalized 0–100 per axis.
-
-### Section 3 — Side-by-side metric table
-If the peer was reached via `get_peers` and `confidence` is "low", show a note
-"数据来源行业分类可信度较低，如下对比仅供参考" above the table.
-`.peer-table` with one row per metric. Three columns: 指标, Subject, Peer.
-Each row carrying a metric that can be drilled further should be drillable.
-
-| 指标 | 贵州茅台 | 五粮液 |
-|---|---|---|
-| PE (TTM) | 28.3 | 20.1 |
-| PB | 12.4 | 8.7 |
-| ROE (%) | 31.2 | 25.4 |
-| 毛利率 (%) | 91.8 | 74.3 |
-| 净利率 (%) | 51.2 | 31.8 |
-| 市值 | 22,800 亿元 | 6,400 亿元 |
-| 营收增速 (近1年, %) | +18.0 | +12.3 |
-
-Drillable metric rows (drill_down on each row for the **subject**):
-```html
-<tr data-flipbook-action="drill_down"
-    data-flipbook-context='{"clicked_topic":"PE 历史分位数","stock_code":"600519","metric":"PE_TTM","value":28.3}'>
-  <td>PE (TTM)</td>
-  <td>28.3</td>
-  <td>20.1</td>
-</tr>
-```
-
-### Section 4 — Differential narrative
-Two paragraphs:
-1. Where the subject leads (cite specific numbers from the table)
-2. Where the subject lags or is comparable (cite specific numbers)
-
-Do not conclude which is the better investment.
-
-### Section 5 — Footer
-Standard disclaimer + data-as-of.
-
----
-
-## Drillable elements checklist
-
-- [ ] Peer hero block (peer_switch back to peer's overview)
-- [ ] Metric table rows (drill_down — at least 3)
-- [ ] Subject breadcrumb back to its overview (peer_switch)
-- [ ] Minimum 5 drillable elements total
-
----
-
-## Length target
-
-5 sections · ~500–600 words narrative.
+2. Print **exactly** this line, then stop:
+   ```
+   PAGE_READY: output/data-<REQUEST_ID>.json
+   ```

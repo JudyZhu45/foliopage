@@ -3,135 +3,551 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Foliopage — 股票研究</title>
+  <title>Foliopage — 本地股票研究</title>
   <link rel="stylesheet" href="/static/foliopage.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+  <script>
+    // Inline early-apply to prevent FOUC. Mirrors theme.js read/apply.
+    (function () {
+      try {
+        var t = localStorage.getItem('foliopage-theme');
+        if (t === 'dark' || t === 'light') {
+          document.documentElement.setAttribute('data-theme', t);
+        }
+      } catch {}
+    })();
+  </script>
+  <script src="/static/theme.js"></script>
   <style>
     body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── Top status bar (Bloomberg-y) ────────────────────────────── */
+    .meta-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.875rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .meta-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+    }
+    .meta-logo {
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.12em;
+    }
+    .meta-version {
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xs);
+      font-size: 0.65rem;
+    }
+    .meta-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+    .meta-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--down-color);
+      box-shadow: 0 0 0 0 currentColor;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+
+    /* ── Main content ──────────────────────────────────────────── */
+    main {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-      gap: 2rem;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, sans-serif;
+      padding: 3rem 1.5rem;
+      max-width: 720px;
+      margin: 0 auto;
+      width: 100%;
     }
-    .hero {
+
+    /* ── Hero brand ────────────────────────────────────────────── */
+    .brand {
       text-align: center;
+      margin-bottom: 2.5rem;
     }
-    .hero h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      margin: 0 0 0.5rem;
-      letter-spacing: -0.02em;
+    .brand h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(3rem, 8vw, 4.5rem);
+      font-weight: 600;
+      letter-spacing: -0.035em;
+      line-height: 1;
+      margin: 0 0 1rem;
+      color: var(--text);
     }
-    .hero p {
+    .brand h1 .dot {
+      color: var(--accent);
+      font-style: italic;
+    }
+    .brand-sub {
+      font-size: 0.95rem;
       color: var(--text-muted);
       margin: 0;
-      font-size: 0.95rem;
+      letter-spacing: 0.005em;
+      line-height: 1.55;
     }
+    .brand-sub strong {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ── Search ────────────────────────────────────────────────── */
     .search-form {
-      display: flex;
-      gap: 0.5rem;
       width: 100%;
-      max-width: 480px;
+      max-width: 560px;
+      position: relative;
     }
     .search-input {
-      flex: 1;
-      padding: 0.65rem 1rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      width: 100%;
+      padding: 1rem 7rem 1rem 3rem;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
       background: var(--surface);
       color: var(--text);
-      font-size: 1rem;
+      font-family: var(--font-sans);
+      font-size: 1.05rem;
       outline: none;
-      transition: border-color 0.15s;
+      transition: border-color var(--dur-base) var(--ease-out),
+                  box-shadow var(--dur-base) var(--ease-out);
+      letter-spacing: -0.005em;
+    }
+    .search-input::placeholder {
+      color: var(--text-subtle);
     }
     .search-input:focus {
       border-color: var(--accent);
+      box-shadow: var(--ring);
+    }
+    .search-icon {
+      position: absolute;
+      left: 1.125rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      width: 18px;
+      height: 18px;
+    }
+    .search-input:focus ~ .search-icon { color: var(--accent); }
+    .search-shortcut {
+      position: absolute;
+      right: 4.25rem;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 3px;
+      pointer-events: none;
+    }
+    .kbd {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 2px 6px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xs);
+      color: var(--text-muted);
+      line-height: 1;
     }
     .search-btn {
-      padding: 0.65rem 1.25rem;
-      background: var(--accent);
-      color: #fff;
+      position: absolute;
+      right: 0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 0.5rem 1rem;
+      background: var(--text);
+      color: var(--bg);
       border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      cursor: pointer;
+      border-radius: var(--radius-md);
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
       font-weight: 600;
-      white-space: nowrap;
-      transition: opacity 0.15s;
+      cursor: pointer;
+      letter-spacing: -0.005em;
+      transition: opacity var(--dur-fast) var(--ease-out),
+                  transform var(--dur-fast) var(--ease-out);
+    }
+    .search-btn:hover:not(:disabled) {
+      opacity: 0.85;
+      transform: translateY(-50%) scale(1.02);
     }
     .search-btn:disabled {
-      opacity: 0.55;
+      opacity: 0.4;
       cursor: not-allowed;
     }
-    .status {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      min-height: 1.5em;
-      text-align: center;
+
+    /* ── Examples ──────────────────────────────────────────────── */
+    .examples-wrap {
+      margin-top: 1.5rem;
+      width: 100%;
+      max-width: 560px;
     }
-    .status.error {
-      color: var(--down-color, #e74c3c);
+    .examples-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-subtle);
+      margin: 0 0 0.625rem;
     }
     .examples {
       display: flex;
-      gap: 0.5rem;
+      gap: 0.4rem;
       flex-wrap: wrap;
-      justify-content: center;
     }
     .example-chip {
-      padding: 0.3rem 0.75rem;
+      padding: 0.35rem 0.85rem;
       border: 1px solid var(--border);
       border-radius: 99px;
       font-size: 0.82rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       cursor: pointer;
       background: var(--surface);
-      transition: border-color 0.15s, color 0.15s;
+      transition: border-color var(--dur-fast) var(--ease-out),
+                  color var(--dur-fast) var(--ease-out),
+                  background var(--dur-fast) var(--ease-out);
+      font-weight: 500;
     }
     .example-chip:hover {
-      border-color: var(--accent);
-      color: var(--text);
+      border-color: var(--accent-border);
+      background: var(--accent-bg);
+      color: var(--accent);
     }
+    .example-chip .chip-code {
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      margin-left: 0.4rem;
+      font-size: 0.74rem;
+    }
+    .example-chip:hover .chip-code { color: var(--accent); }
+
+    /* ── Status ────────────────────────────────────────────────── */
+    .status {
+      margin-top: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      min-height: 1.5em;
+      text-align: center;
+      letter-spacing: 0.005em;
+    }
+    .status.error {
+      color: var(--up-color);
+    }
+    .status.loading {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      color: var(--text-secondary);
+    }
+    .loading-bar {
+      display: inline-block;
+      width: 24px;
+      height: 2px;
+      background: var(--border);
+      border-radius: 1px;
+      overflow: hidden;
+      position: relative;
+    }
+    .loading-bar::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--accent);
+      animation: bar-slide 1.4s ease-in-out infinite;
+    }
+    @keyframes bar-slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    /* ── Recent (cached research) ─────────────────────────────── */
+    .recent {
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      width: 100%;
+      max-width: 560px;
+      display: none;
+    }
+    .recent.has-items { display: block; }
+    .recent-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+    .recent-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-subtle);
+    }
+    .recent-count {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-subtle);
+      letter-spacing: 0.08em;
+    }
+    .recent-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+    }
+    .recent-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.55rem 0.875rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: border-color var(--dur-fast) var(--ease-out),
+                  background var(--dur-fast) var(--ease-out),
+                  transform var(--dur-fast) var(--ease-out);
+    }
+    .recent-item:hover {
+      border-color: var(--accent-border);
+      background: var(--accent-bg);
+      transform: translateX(2px);
+    }
+    .recent-item-name {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.005em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recent-item-time {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+    .recent-item:hover .recent-item-time { color: var(--accent); }
+
+    @media (max-width: 560px) {
+      .recent-list { grid-template-columns: 1fr; }
+    }
+
+    /* ── How-it-works strip ───────────────────────────────────── */
+    .how {
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+      width: 100%;
+      max-width: 560px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    .how-step {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .how-step-num {
+      display: block;
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+      font-weight: 600;
+    }
+    .how-step-text {
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      letter-spacing: -0.005em;
+    }
+
+    @media (max-width: 560px) {
+      .how { grid-template-columns: 1fr; gap: 1rem; }
+      .search-shortcut { display: none; }
+      .search-input { padding-right: 5rem; }
+    }
+
+    /* ── Footer ────────────────────────────────────────────────── */
+    .foot {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-subtle);
+      text-align: center;
+      letter-spacing: 0.05em;
+    }
+    .foot a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color var(--dur-fast) var(--ease-out);
+    }
+    .foot a:hover { color: var(--accent); }
   </style>
 </head>
 <body>
-  <div class="hero">
-    <h1>Foliopage</h1>
-    <p>AI 驱动的本地股票研究工具</p>
+
+  <!-- ── Top meta bar ────────────────────────────────────────────── -->
+  <div class="meta-bar">
+    <div class="meta-bar-left">
+      <span class="meta-logo">FOLIOPAGE</span>
+      <span class="meta-version">v0.1</span>
+    </div>
+    <div class="meta-bar-right">
+      <span class="meta-status" id="metaTime"></span>
+      <span id="themeToggle"></span>
+      <span class="meta-status">
+        <span class="status-dot"></span>
+        <span>LOCAL · 8000</span>
+      </span>
+    </div>
   </div>
 
-  <form class="search-form" id="searchForm">
-    <input
-      class="search-input"
-      id="queryInput"
-      type="text"
-      placeholder="输入股票代码或公司名称，如 茅台 或 AAPL"
-      autocomplete="off"
-      autofocus
-    >
-    <button class="search-btn" id="searchBtn" type="submit">研究</button>
-  </form>
+  <!-- ── Main ───────────────────────────────────────────────────── -->
+  <main>
+    <div class="brand">
+      <h1>folio<span class="dot">·</span>page</h1>
+      <p class="brand-sub">
+        本地优先的股票研究终端 · <strong>Powered by Claude Code</strong>
+      </p>
+    </div>
 
-  <div class="examples">
-    <span class="example-chip" data-q="茅台">茅台</span>
-    <span class="example-chip" data-q="宁德时代">宁德时代</span>
-    <span class="example-chip" data-q="AAPL">AAPL</span>
-    <span class="example-chip" data-q="NVDA">NVDA</span>
-    <span class="example-chip" data-q="洋河股份">洋河股份</span>
-  </div>
+    <form class="search-form" id="searchForm">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input
+        class="search-input"
+        id="queryInput"
+        type="text"
+        placeholder="输入股票名称或代码 — 茅台、AAPL、600519…"
+        autocomplete="off"
+        spellcheck="false"
+        autofocus
+      >
+      <span class="search-shortcut">
+        <span class="kbd">⌘</span><span class="kbd">K</span>
+      </span>
+      <button class="search-btn" id="searchBtn" type="submit">研究 →</button>
+    </form>
 
-  <div class="status" id="status"></div>
+    <div class="examples-wrap">
+      <p class="examples-label">— 试试 —</p>
+      <div class="examples">
+        <span class="example-chip" data-q="贵州茅台">茅台<span class="chip-code">600519</span></span>
+        <span class="example-chip" data-q="宁德时代">宁德时代<span class="chip-code">300750</span></span>
+        <span class="example-chip" data-q="比亚迪">比亚迪<span class="chip-code">002594</span></span>
+        <span class="example-chip" data-q="AAPL">Apple<span class="chip-code">AAPL</span></span>
+        <span class="example-chip" data-q="NVDA">Nvidia<span class="chip-code">NVDA</span></span>
+        <span class="example-chip" data-q="洋河股份">洋河股份<span class="chip-code">002304</span></span>
+      </div>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <section class="recent" id="recent">
+      <div class="recent-header">
+        <span class="recent-label">— 最近研究 —</span>
+        <span class="recent-count" id="recentCount"></span>
+      </div>
+      <div class="recent-list" id="recentList"></div>
+    </section>
+
+    <div class="how">
+      <div class="how-step">
+        <span class="how-step-num">01 / INPUT</span>
+        <span class="how-step-text">输入名称或代码</span>
+      </div>
+      <div class="how-step">
+        <span class="how-step-num">02 / RESEARCH</span>
+        <span class="how-step-text">Agent 抓取数据 · 生成图表</span>
+      </div>
+      <div class="how-step">
+        <span class="how-step-num">03 / EXPLORE</span>
+        <span class="how-step-text">点击任意指标深入下钻</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Footer ───────────────────────────────────────────────── -->
+  <footer class="foot">
+    Local-first · No SaaS · No API keys ·
+    <a href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+  </footer>
 
   <script>
     const form = document.getElementById('searchForm');
     const input = document.getElementById('queryInput');
     const btn = document.getElementById('searchBtn');
     const status = document.getElementById('status');
+    const metaTime = document.getElementById('metaTime');
+    const recent = document.getElementById('recent');
+    const recentList = document.getElementById('recentList');
+    const recentCount = document.getElementById('recentCount');
+
+    // Live clock in meta bar (Bloomberg vibe)
+    function updateClock() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      metaTime.textContent = `${hh}:${mm}:${ss}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Theme toggle
+    if (window.foliopageTheme) {
+      window.foliopageTheme.mount(document.getElementById('themeToggle'));
+    }
+
+    // ⌘K / Ctrl+K to focus
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        input.focus();
+        input.select();
+      }
+    });
 
     // Example chips
     document.querySelectorAll('.example-chip').forEach(chip => {
@@ -141,14 +557,57 @@
       });
     });
 
+    // Fetch & render recent research (cached)
+    function relativeTime(ts) {
+      const diff = Math.max(0, Date.now() / 1000 - ts);
+      if (diff < 60)        return 'JUST NOW';
+      if (diff < 3600)      return `${Math.floor(diff / 60)}M AGO`;
+      if (diff < 86400)     return `${Math.floor(diff / 3600)}H AGO`;
+      if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}D AGO`;
+      const d = new Date(ts * 1000);
+      return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    async function loadRecent() {
+      try {
+        const res = await fetch('/api/recent?limit=8');
+        if (!res.ok) return;
+        const items = await res.json();
+        if (!Array.isArray(items) || items.length === 0) return;
+
+        recentList.innerHTML = '';
+        items.forEach(item => {
+          const el = document.createElement('div');
+          el.className = 'recent-item';
+          el.innerHTML = `
+            <span class="recent-item-name">${escapeHTML(item.stock_query)}</span>
+            <span class="recent-item-time">${relativeTime(item.created_at_ts)}</span>
+          `;
+          el.addEventListener('click', () => {
+            input.value = item.stock_query;
+            form.requestSubmit();
+          });
+          recentList.appendChild(el);
+        });
+        recentCount.textContent = `${items.length} CACHED`;
+        recent.classList.add('has-items');
+      } catch (_) { /* silent */ }
+    }
+    function escapeHTML(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+    loadRecent();
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const query = input.value.trim();
       if (!query) return;
 
       btn.disabled = true;
-      status.className = 'status';
-      status.textContent = '正在启动研究（通常需要 1–3 分钟）…';
+      status.className = 'status loading';
+      status.innerHTML = '<span class="loading-bar"></span> 启动研究中（首次约 1–3 分钟）';
 
       try {
         const res = await fetch('/api/generate', {
@@ -163,7 +622,6 @@
         }
 
         const data = await res.json();
-        // Navigate to report viewer with session + request context
         const params = new URLSearchParams({
           session: data.session_id,
           request: data.request_id,
@@ -172,7 +630,7 @@
         window.location.href = `/report?${params}`;
       } catch (err) {
         status.className = 'status error';
-        status.textContent = `错误：${err.message}`;
+        status.textContent = `✕ ${err.message}`;
         btn.disabled = false;
       }
     });

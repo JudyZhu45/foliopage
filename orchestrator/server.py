@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .agent_runner import run_agent
+from .renderer import render_page
 from .config import Config
 from .errors import (
     AgentDidNotProduceOutputError,
@@ -345,7 +346,18 @@ def create_app(config: Config | None = None) -> FastAPI:
             )
 
         # ── Success path ──────────────────────────────────────────────────────
-        html_content = result.html_path.read_text(encoding="utf-8", errors="replace")
+        if result.json_path is not None:
+            # Agent produced JSON → render to HTML server-side (chart generation included)
+            html_content = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: render_page(
+                    json_path=result.json_path,
+                    workspace=session.workspace,
+                    request_id=request_id,
+                ),
+            )
+        else:
+            html_content = result.html_path.read_text(encoding="utf-8", errors="replace")
         html_url = f"/api/sessions/{session.session_id}/pages/{request_id}"
         duration_ms = int(result.duration_seconds * 1000)
 
@@ -393,6 +405,35 @@ def create_app(config: Config | None = None) -> FastAPI:
         except SessionNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return [e.to_dict() for e in session.page_stack()]
+
+    # ── Recent research (for landing page chips) ──────────────────────────────
+
+    @app.get("/api/recent")
+    async def get_recent(limit: int = 8) -> list[dict[str, Any]]:
+        cache_root = cfg.page_cache_root
+        if not cache_root.exists():
+            return []
+        items: list[dict[str, Any]] = []
+        for meta_path in cache_root.glob("*.meta.json"):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if meta.get("action") != "initial":
+                continue
+            query = (meta.get("context") or {}).get("stock_query")
+            if not query:
+                continue
+            items.append({
+                "stock_query": query,
+                "created_at_ts": meta.get("created_at_ts", 0),
+                "duration_ms": meta.get("duration_ms", 0),
+            })
+        seen: dict[str, dict[str, Any]] = {}
+        for item in sorted(items, key=lambda x: x["created_at_ts"], reverse=True):
+            if item["stock_query"] not in seen:
+                seen[item["stock_query"]] = item
+        return list(seen.values())[:limit]
 
     # ── Back navigation ───────────────────────────────────────────────────────
 

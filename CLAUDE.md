@@ -54,8 +54,11 @@ gap with an invented number.
 structured data into `session/data_cache.json`. Do this **before** calling any
 chart tool and **before** writing any HTML.
 
-**Keys to cache:** `basic:*`, `kline:*`, `val:*`, `fin:*`, `peers:*`,
-`analyst:*`, `revbk:*`, `rd:*`, `holders:*`, `unlock:*`.
+**Keys to cache:** `basic:*`, `kline:*`, `val:*`, `fin:*`, `peers:*`.
+
+**`kline:*` must include the full `bars` array** — do NOT strip or summarise it.
+The server reads these bars to render the price chart. Store the entire
+`get_kline()` return value as the `data` field.
 
 **Keys to NEVER cache:** `news:*`, `ann:*` — these contain free-text titles
 that may include unescaped quote characters, which corrupt the JSON file.
@@ -79,28 +82,36 @@ PYEOF
 This checkpoint prevents re-fetching after context compaction. After compaction,
 the agent re-reads `session/data_cache.json` to recover structured data.
 
-### Phase 4 — Generate visuals
+### Phase 4 — skip chart tools entirely
 
-Call `mcp__foliopage-chart__*` for every chart the skill requires. Paste the
-returned `svg` string verbatim into the HTML — do not alter it.
+The agent does **not** call any `mcp__foliopage-chart__*` tools.
+The orchestrator generates all SVG charts server-side in Python after the agent
+exits. This applies to both `stock-overview` and `valuation-deep`.
 
-### Phase 5 — Compose, write, register
+### Phase 5 — Write JSON output and register
 
-**Before writing any HTML**: check whether `output/page-<REQUEST_ID>.html`
-already exists and ends with `</html>`. If it does, skip straight to step 7.
+**The agent does NOT generate HTML.** Instead:
 
-For stock-overview pages (19 sections, ~150-200 KB), use **segmented writes**
-to avoid output token truncation:
-1. `Write` the HTML head + first 4 sections to `output/page-<REQUEST_ID>.html`.
-2. `Edit` (append-style replacement) each subsequent batch of 4-5 sections.
-3. `Edit` the final batch to append remaining sections + `</body></html>`.
-4. `Read` the last 10 lines of the file to verify it ends with `</html>`.
-5. Append one entry to `session/page_stack.json` (schema below).
-6. (Cache already written in Phase 3.5 — skip if no new data was fetched.)
-7. Print **exactly** this line, then stop:
+1. Write the structured JSON to `output/data-<REQUEST_ID>.json` using Bash +
+   Python's `json.dumps` — never the Write tool (unescaped chars corrupt JSON):
+   ```bash
+   python3 << 'PYEOF'
+   import json, pathlib
+   data = { ... }   # full dict per the skill schema
+   pathlib.Path("output/data-<REQUEST_ID>.json").write_text(
+       json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+   )
+   PYEOF
    ```
-   PAGE_READY: output/page-<REQUEST_ID>.html
+2. Append one entry to `session/page_stack.json` (schema below).
+3. (Cache already written in Phase 3.5.)
+4. Print **exactly** this line, then stop:
    ```
+   PAGE_READY: output/data-<REQUEST_ID>.json
+   ```
+
+The orchestrator reads the JSON, generates SVG charts server-side, and renders
+the final HTML — the agent never writes HTML.
 
 ---
 
@@ -230,9 +241,8 @@ ONLY two element types may carry `data-flipbook-action` in generated pages:
 ALL other elements must NOT carry `data-flipbook-action`:
 - KPI grid metric cards
 - Financial, quarterly, or peers table rows
-- News / announcement / analyst rating items
-- Shareholder rows, unlock event rows
-- Forward Framework table cells
+- News / announcement items
+- Catalysts & risks bullets
 
 ---
 
@@ -274,10 +284,8 @@ policy above). Peer company names in narrative prose SHOULD be wrapped as inline
   (`28.30`); units after the number (`亿元`, `%`, `$B`)
 - **Market cap:** A-share in `亿元`; US in `$B`
 - **Company names:** Chinese name + code in parens: `贵州茅台 (600519)`, `Apple (AAPL)`
-- **Analyst data:** display analyst ratings counts, target price distributions
-  (pessimistic/neutral/optimistic), and individual firm calls from tool results.
-  This is third-party data — showing it does not violate the no-recommendation rule.
-  The agent must never add its own buy/sell/hold opinion on top of the analyst data.
+- **Analyst data:** not included in the 14-section stock-overview; available via
+  the valuation-deep drill-down.
 - **Tone:** analytical and editorial. No emoji (🚀 🔥), no exclamation marks except
   in direct source quotes
 - **Headings:** sentence case
@@ -329,21 +337,6 @@ not retry with discovery.
 - Never output anything after `PAGE_READY:`
 - Never use placeholder text (Lorem ipsum, "TBD", "coming soon")
 
-### Forward Framework section — additional hard rules
-
-The Forward Framework (前瞻框架) section is the most opinion-loaded part of any
-overview page. These rules are mandatory, no exceptions:
-
-1. Cells describe **conditions and drivers** only — never specific stock prices,
-   percentage gain targets, or PE targets.
-2. No probability language ("70% chance of...", "very likely...").
-3. No buy/hold/sell language anywhere in this section.
-4. Each cell must reference specific data points or events from elsewhere on the
-   same page (financials, news, announcements, catalysts). If a cell cannot be
-   grounded in this page's data, write `需观察` — never invent drivers.
-5. The mandatory disclaimer note below the table is required every time, verbatim:
-   `本框架为基于公开数据的情景分析，不构成具体股价预测或投资建议。`
-
 ---
 
 ## Session file schemas
@@ -394,7 +387,7 @@ overview page. These rules are mandatory, no exceptions:
 ## Visual reference
 
 See `examples/600519-overview.html` for the layout and density gold standard.
-It demonstrates all three patch-series features: hybrid peer selection with
-同行理由 column, the Forward Framework 3×3 matrix, and the fixed Drill Deeper
-6-card section at the bottom. Match its section order, card sizes, and
-data density when producing stock-overview pages.
+Match its section order, card sizes, and data density when producing
+stock-overview pages. The 14-section layout omits revenue breakdown, R&D,
+analyst consensus, shareholder structure, and Forward Framework — these are
+available via drill-down skills.

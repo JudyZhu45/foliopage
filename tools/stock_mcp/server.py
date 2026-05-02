@@ -683,13 +683,15 @@ def _valuation_a(code: str) -> dict:
     except Exception as exc:
         log.debug("PE/PB computation failed for %s: %s", code, exc)
 
-    # PE percentile (best-effort, EM endpoint)
+    # PE percentile + history (best-effort, EM endpoint)
     pe_pct: float | None = None
     pe_desc: str | None = None
+    pe_history: list[dict] = []
     try:
         pe_hist = _ak(ak.stock_a_pe, symbol=code, retries=1, base_delay=3.0)
         if not pe_hist.empty:
             pe_col = _df_col(pe_hist, "PE", "市盈率")
+            date_col = _df_col(pe_hist, "日期", "date", "Date")
             if pe_col and pe_ttm:
                 series = pe_hist[pe_col].apply(_safe_float).dropna()
                 series = series[series > 0]
@@ -699,6 +701,14 @@ def _valuation_a(code: str) -> dict:
                     years = round(len(series) / 252)
                     pe_desc = (f"PE {pe_ttm:.1f}x is at {pe_pct:.0f}th percentile "
                                f"of last ~{years}y history")
+            # Build pe_history list (last 10 years ≤ 2520 bars) for pe_band_svg
+            if pe_col and date_col:
+                tail = pe_hist.tail(2520)
+                for _, row in tail.iterrows():
+                    d = str(row[date_col])[:10]
+                    p = _safe_float(row[pe_col])
+                    if d and p and p > 0:
+                        pe_history.append({"date": d, "pe": round(p, 2)})
     except Exception as exc:
         log.debug("PE percentile unavailable for %s: %s", code, exc)
 
@@ -711,6 +721,7 @@ def _valuation_a(code: str) -> dict:
         "market_cap_yi": market_cap_yi,
         "pe_10y_percentile": pe_pct,
         "pe_percentile_desc": pe_desc,
+        "pe_history": pe_history,
         "as_of": _ts(),
         "source": SOURCE,
         "units": {"market_cap_yi": "亿元", "pe_10y_percentile": "%"},

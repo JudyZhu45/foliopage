@@ -15,6 +15,8 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`.
 
 ## Step 2 — Fetch data (check data_cache.json first)
 
+Issue **all 6 calls simultaneously in one turn** (never call these one at a time):
+
 | Cache key | Tool |
 |---|---|
 | `basic:<code>` | `get_basic_info(code)` |
@@ -24,68 +26,139 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`.
 | `peers:<code>:10` | `get_peers(code, n=10)` |
 | `analyst:<code>` | `analyst_consensus(code)` |
 
----
+**After all results arrive**: write cache via Bash (python3 json.dumps).
+Cache keys: `basic:<code>`, `val:<code>`, `fin:<code>:annual`, `peers:<code>:10`.
+**Never cache** `analyst:*`.
 
-## Step 3 — Generate charts
-
-- `pe_band_svg(pe_history=val.pe_history, current_pe=val.pe_ttm)` —
-  5-year PE band (primary chart)
-- `peer_bar_svg(items=[{code,name,value=pe_ttm},...], metric="PE(TTM)",
-  highlight_code=<code>)` — peer PE comparison
-- `comparison_radar_svg(subject, peers[:3],
-  metrics=["pe","pb","ev_ebitda","roe","gross_margin"])` — multi-metric radar
+`val:<code>` data now includes `pe_history` — a list of `{date, pe}` dicts.
+Copy it verbatim into the JSON output (see schema below).
 
 ---
 
-## Step 4 — Page structure (4 sections)
+## Step 3 — Write output JSON
 
-**Drillable policy:** ONLY inline company-link peer_switch spans in
-narrative prose may carry `data-flipbook-action`.
+Write the following JSON to `output/data-<REQUEST_ID>.json` using the Bash tool
+with Python's `json.dumps` to ensure correct escaping:
 
-### Section 1 — Valuation snapshot
+```bash
+python3 << 'PYEOF'
+import json, pathlib
+data = {
+    # ... full dict below ...
+}
+pathlib.Path("output/data-<REQUEST_ID>.json").write_text(
+    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+)
+PYEOF
+```
 
-KPI cards: PE(TTM), PB, EV/EBITDA, 10Y PE percentile, dividend yield.
-Percentile badge on PE (color: green < 30th, amber 30–70th, red > 70th).
+**`pe_history` is mandatory.** Copy the full list from `get_valuation().pe_history`
+verbatim. The server uses it to render the PE band chart. Set to `[]` if unavailable.
 
-### Section 2 — Historical PE band
+**Peer link markup:** in `valuation_snapshot`, `pe_band_narrative`, `peer_narrative`,
+and `valuation_narrative`, wrap peer company names as `[[stock_code|display_name]]`.
+Use this markup for **≥3 company name mentions** across all narrative fields.
 
-`pe_band_svg` in `.chart-container`.
+**Numerical precision:** 2 decimal places for ratios; 1 decimal for large values.
+**Never invent numbers** — every value must come from a tool result or be `null`.
 
-Narrative (2–3 sentences): where does current PE sit vs 10-year range?
-What events drove prior valuation peaks/troughs (cite specific dates from
-financials / news). Label inferred historical context with `.data-inferred`.
+### JSON schema
 
-### Section 3 — Peer & overseas comparison
-
-Two sub-sections:
-
-**A — Domestic peers:** `peer_bar_svg` (PE) + `comparison_radar_svg`.
-Table: 名称, PE, PB, EV/EBITDA, ROE, 毛利率. Wrap peer names as inline
-peer_switch spans. One paragraph: premium/discount rationale grounded in
-business differences.
-
-**B — Implied growth rate:** back out the growth rate implied by current PE
-using a simple Gordon/DDM heuristic. Show formula transparently. Label with
-`.data-inferred`. Do NOT state this as a prediction — frame as "当前估值
-隐含的增长假设约为 X%，参考近三年CAGR为Y%".
-
-### Section 4 — Valuation context narrative
-
-3–4 paragraphs, 300–400 words. Connect:
-- Current PE percentile to business quality (ROE, margin stability)
-- Analyst target price range (P25/P75 from `analyst_consensus`) vs implied
-  growth — show the range, never a personal recommendation
-- One `<blockquote class="pull-quote">` with the most striking number
-- Wrap peer names as inline peer_switch spans
-
-Not permitted: buy/sell/hold language; price targets stated as own opinion.
+```json
+{
+  "meta": {
+    "stock_code": "<code>",
+    "stock_name": "<name>",
+    "skill": "valuation-deep",
+    "as_of": "<ISO datetime from basic_info>"
+  },
+  "hero": {
+    "industry": "<sector from basic_info>",
+    "exchange": "<SH|SZ|HK|…>",
+    "as_of": "<date string>"
+  },
+  "kpi": {
+    "pe_ttm": <or null>,
+    "pe_percentile": <integer or null>,
+    "pb": <or null>,
+    "ev_ebitda": <or null>,
+    "dividend_yield_pct": <or null>,
+    "roe_pct": <or null>,
+    "as_of": "<date string>"
+  },
+  "pe_history": [
+    {"date": "YYYY-MM-DD", "pe": 28.3}
+  ],
+  "peer_bar_metric": "PE(TTM)",
+  "peer_bar_items": [
+    {"code": "<code>", "name": "<name>", "PE(TTM)": <pe_ttm or null>}
+  ],
+  "radar_subject": {
+    "code": "<code>",
+    "name": "<name>",
+    "pe": <pe_ttm or null>,
+    "pb": <pb or null>,
+    "ev_ebitda": <or null>,
+    "roe": <roe_pct or null>,
+    "gross_margin": <gross_margin_pct or null>
+  },
+  "radar_peers": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "pe": <or null>,
+      "pb": <or null>,
+      "ev_ebitda": <or null>,
+      "roe": <or null>,
+      "gross_margin": <or null>
+    }
+  ],
+  "radar_metrics": ["pe", "pb", "ev_ebitda", "roe", "gross_margin"],
+  "valuation_snapshot": "<2-3 sentences about current valuation level, ≥1 [[code|name]] link>",
+  "pe_band_narrative": "<2-3 sentences: where current PE sits vs historical range, notable peaks/troughs>",
+  "peers": [
+    {
+      "code": "<code>",
+      "name": "<name>",
+      "pe_ttm": <or null>,
+      "pb": <or null>,
+      "ev_ebitda": <or null>,
+      "roe_pct": <or null>,
+      "gross_margin_pct": <or null>
+    }
+  ],
+  "peer_narrative": "<2-3 sentences, premium/discount rationale, ≥2 [[code|name]] links>",
+  "implied_growth_rate": <float or null>,
+  "implied_growth_note": "<one sentence showing Gordon/DDM formula transparently, label as inferred>",
+  "analyst_target_low": <float or null>,
+  "analyst_target_high": <float or null>,
+  "analyst_count": <int or null>,
+  "valuation_narrative": "<4 paragraphs separated by \\n\\n: PE percentile vs business quality, analyst range vs implied growth, key risk to valuation, overall assessment. ≥2 [[code|name]] links>",
+  "pull_quote": "<single most striking valuation data point>"
+}
+```
 
 ---
 
-## Segmented write strategy
+## Step 4 — Register and complete
 
-Write in 2 segments:
-1. `Write` — head + Sections 1–2
-2. `Edit` append — Sections 3–4 + footer + `</body></html>`
+1. Append to `session/page_stack.json`:
+   ```json
+   {
+     "request_id": "<REQUEST_ID>",
+     "action": "drill_down",
+     "title": "<name> (<code>) 估值深度",
+     "stock_code": "<code>",
+     "stock_name": "<name>",
+     "skill_used": "valuation-deep",
+     "summary": "4-section valuation: KPI, PE band, peer comparison, narrative",
+     "data_keys_used": ["basic:<code>", "val:<code>", "fin:<code>:annual", "peers:<code>:10"],
+     "parent_request_id": "<PARENT_REQUEST_ID from CLICKED_CONTEXT or page_stack>",
+     "created_at": "<ISO datetime>"
+   }
+   ```
 
-Print `PAGE_READY: output/page-<REQUEST_ID>.html` when done.
+2. Print **exactly** this line, then stop:
+   ```
+   PAGE_READY: output/data-<REQUEST_ID>.json
+   ```

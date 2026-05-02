@@ -582,6 +582,7 @@ class TestPageCache:
                     html_file.parent.mkdir(parents=True, exist_ok=True)
                     html_file.write_text("<!DOCTYPE html><html><body>fresh</body></html>")
                     mock_result.html_path = html_file
+                    mock_result.json_path = None  # simulate legacy HTML output
                     mock_result.duration_seconds = 1.0
                     return mock_result
                 mock_run.side_effect = _fake_run
@@ -681,14 +682,14 @@ def test_e2e_generate(tmp_config: Config) -> None:
 
     from orchestrator.server import create_app
 
-    tmp_config.agent_timeout = 2400  # 19-section research pages take 25-35 min; cache+compaction overhead
+    tmp_config.agent_timeout = 900  # 14-section overview targets ≤15 min with parallel charts + no compaction
 
     app = create_app(tmp_config)
     with TestClient(app) as client:
         resp = client.post(
             "/api/generate",
             json={"action": "initial", "context": {"stock_query": "洋河股份"}},
-            timeout=2450,
+            timeout=950,
         )
 
     assert resp.status_code == 200, resp.text
@@ -701,4 +702,4 @@ def test_e2e_generate(tmp_config: Config) -> None:
     assert "<svg" in data["html"]
     assert "/static/foliopage.css" in data["html"]
     assert len(data["page_stack"]) == 1
-    assert 30_000 <= data["duration_ms"] <= 2_500_000
+    assert 30_000 <= data["duration_ms"] <= 1_000_000
