@@ -583,6 +583,7 @@
     const progressLastUpdate = document.getElementById('progressLastUpdate');
     const progressRlBanner = document.getElementById('progressRlBanner');
     let pollTimer = null;
+    let progressSelfRescued = false;
 
     // ── Live clock ────────────────────────────────────────────────────────────
     function updateClock() {
@@ -687,10 +688,44 @@
         if (!r.ok) return;
         const data = await r.json();
         renderProgress(data);
+        // Self-rescue: agent finished but the /api/generate handler may
+        // have died (uvicorn --reload kills mid-flight workers). Pull the
+        // result via the session stack and load it without waiting on
+        // the generate() promise.
+        if (data.status === 'done' && !progressSelfRescued) {
+          progressSelfRescued = true;
+          stopProgressPoll();
+          await rescueFromStack(sid);
+        }
       } catch { /* network blip — keep polling */ }
+    }
+    async function rescueFromStack(sid) {
+      try {
+        const r = await fetch(`/api/sessions/${sid}/stack`);
+        if (!r.ok) {
+          showStatus('✕ Agent 完成但无法获取页面信息', true);
+          hideLoading();
+          return;
+        }
+        const stack = await r.json();
+        if (!Array.isArray(stack) || stack.length === 0) {
+          showStatus('✕ Agent 完成但 page_stack.json 为空', true);
+          hideLoading();
+          return;
+        }
+        const latest = stack[stack.length - 1];
+        const url = `/api/sessions/${sid}/pages/${latest.request_id}`;
+        sessionId = sid;
+        const label = latest.title || latest.stock_name || latest.request_id;
+        await loadPage(url, label);
+      } catch (e) {
+        showStatus(`✕ 自动恢复失败: ${e.message}`, true);
+        hideLoading();
+      }
     }
     function startProgressPoll(sid) {
       stopProgressPoll();
+      progressSelfRescued = false;
       loadingProgress.classList.add('visible');
       pollProgressOnce(sid);  // immediate first read
       pollTimer = setInterval(() => pollProgressOnce(sid), 2000);
@@ -778,6 +813,11 @@
           body: JSON.stringify(body),
         });
 
+        // If progress polling already self-rescued (server worker died but
+        // agent finished), the page is already showing — silently swallow
+        // whatever this fetch returns.
+        if (progressSelfRescued) return { _rescued: true };
+
         if (!res.ok) {
           const err = await res.json().catch(() => ({ detail: res.statusText }));
           throw new Error(err.detail || res.statusText);
@@ -787,6 +827,7 @@
         sessionId = data.session_id;
         return data;
       } catch (err) {
+        if (progressSelfRescued) return { _rescued: true };
         hideLoading();
         showStatus(`✕ ${err.message}`, true);
         throw err;
@@ -860,6 +901,7 @@
             { stock_code, clicked_topic, clicked_context: clicked_context || {} },
             `正在深入分析 ${clicked_topic}`,
           );
+          if (data._rescued) { return; }
           if (!data.error) {
             await loadPage(data.html_url, clicked_topic || stock_code);
           } else {
@@ -886,6 +928,7 @@
               clicked_context: { stock_code, stock_name } },
             `正在生成 ${label}`,
           );
+          if (data._rescued) { return; }
           if (!data.error) {
             await loadPage(data.html_url, label);
           } else {
@@ -902,6 +945,7 @@
             { stock_code, stock_name },
             `正在切换到 ${stock_name || stock_code}`,
           );
+          if (data._rescued) { return; }
           if (!data.error) {
             await loadPage(data.html_url, stock_name || stock_code);
           } else {
@@ -924,7 +968,8 @@
               '正在重新生成',
               { force_refresh: true },
             );
-            if (!data.error) {
+            if (data._rescued) { return; }
+          if (!data.error) {
               await loadPage(data.html_url, lastRequest.loadingText || data.request_id);
             } else {
               frame.src = data.html_url;
@@ -944,6 +989,7 @@
         sessionId = null;
         pageStack.length = 0;
         const data = await generate('initial', { stock_query: q }, `正在研究 ${q}`);
+        if (data._rescued) { miniQuery.value = ''; return; }
         sessionId = data.session_id;
         const p = new URLSearchParams({ session: data.session_id, request: data.request_id, url: data.html_url });
         history.pushState({}, '', `/report?${p}`);
@@ -983,6 +1029,7 @@
             { stock_query: initQuery },
             `正在研究 ${initQuery}`,
           );
+          if (data._rescued) { return; }
           // Update URL bar to include the resulting request_id + html_url so
           // a refresh re-loads from the page cache instead of re-generating.
           const p = new URLSearchParams({
