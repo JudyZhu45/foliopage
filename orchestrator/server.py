@@ -376,6 +376,14 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     # ── Session routes ────────────────────────────────────────────────────────
 
+    @app.post("/api/sessions")
+    async def create_session() -> dict[str, str]:
+        """Pre-create an empty session so the client can poll /progress
+        before /api/generate starts. The next /api/generate call passes the
+        same session_id and this session is reused (no duplicate workspace)."""
+        s = Session.create(cfg)
+        return {"session_id": s.session_id}
+
     @app.get("/api/sessions/{session_id}")
     async def get_session(session_id: str) -> dict[str, Any]:
         try:
@@ -383,6 +391,105 @@ def create_app(config: Config | None = None) -> FastAPI:
         except SessionNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return session.to_dict()
+
+    @app.get("/api/sessions/{session_id}/progress")
+    async def get_progress(session_id: str) -> dict[str, Any]:
+        """
+        Live progress derived from the agent transcript. Safe to poll every
+        few seconds while /api/generate is in flight — read-only, no locks.
+        Returns the agent's current step, completed/pending tool calls, and
+        whether a rate-limit warning has fired.
+        """
+        try:
+            session = Session.load(session_id, cfg)
+        except SessionNotFoundError:
+            return {"status": "no_session"}
+
+        transcript = session.workspace / "logs" / "transcript.jsonl"
+        if not transcript.exists() or transcript.stat().st_size == 0:
+            return {"status": "starting"}
+
+        tool_id_to_name: dict[str, str] = {}
+        completed: list[str] = []
+        pending: dict[str, str] = {}  # tool_use_id -> name
+        last_text = ""
+        rate_limited = False
+        has_result = False
+        first_ts: str | None = None
+        last_ts: str | None = None
+
+        try:
+            with transcript.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    t = ev.get("type")
+                    if t == "result":
+                        has_result = True
+                    elif t == "rate_limit_event":
+                        rate_limited = True
+                    elif t == "assistant":
+                        msg = ev.get("message") or {}
+                        for blk in (msg.get("content") or []):
+                            if not isinstance(blk, dict):
+                                continue
+                            if blk.get("type") == "tool_use":
+                                tu_id = blk.get("id")
+                                name = blk.get("name", "?")
+                                if tu_id:
+                                    tool_id_to_name[tu_id] = name
+                                    pending[tu_id] = name
+                            elif blk.get("type") == "text":
+                                txt = (blk.get("text") or "").strip()
+                                if txt:
+                                    last_text = txt
+                    elif t == "user":
+                        ts = ev.get("timestamp")
+                        if ts:
+                            if first_ts is None:
+                                first_ts = ts
+                            last_ts = ts
+                        msg = ev.get("message") or {}
+                        for blk in (msg.get("content") or []):
+                            if not isinstance(blk, dict):
+                                continue
+                            if blk.get("type") == "tool_result":
+                                tu_id = blk.get("tool_use_id")
+                                if tu_id and tu_id in pending:
+                                    completed.append(pending.pop(tu_id))
+        except OSError:
+            return {"status": "error"}
+
+        # Time bookkeeping
+        from datetime import datetime as _dt
+        elapsed_s = 0
+        last_event_age_s = 0
+        if first_ts:
+            try:
+                first = _dt.fromisoformat(first_ts.replace("Z", "+00:00"))
+                last = _dt.fromisoformat((last_ts or first_ts).replace("Z", "+00:00"))
+                now = _dt.now(tz=first.tzinfo)
+                elapsed_s = max(0, int((now - first).total_seconds()))
+                last_event_age_s = max(0, int((now - last).total_seconds()))
+            except (ValueError, TypeError):
+                pass
+
+        return {
+            "status": "done" if has_result else "running",
+            "phase_text": last_text[:200],
+            "completed_tools": completed,
+            "pending_tools": list(pending.values()),
+            "completed_count": len(completed),
+            "rate_limited": rate_limited,
+            "elapsed_s": elapsed_s,
+            "last_event_age_s": last_event_age_s,
+        }
 
     @app.get("/api/sessions/{session_id}/pages/{request_id}")
     async def get_page(session_id: str, request_id: str) -> FileResponse:
