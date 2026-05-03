@@ -31,3 +31,15 @@ node_modules/
 # Generated output
 shell/pages/
 .foliopage/
+
+# Claude Code local state (CLAUDE.md and .claude/skills/ ARE tracked —
+# they're the project's agent prompt and skill library. These are the
+# per-developer artifacts that should NOT be committed.)
+.claude/settings.local.json
+.claude/cache/
+.claude/conversations/
+.claude/state/
+.claude/projects/
+AGENTS.md.local
+CLAUDE.local.md
+*.session.jsonl
