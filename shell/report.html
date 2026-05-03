@@ -967,9 +967,38 @@
     });
 
     // ── Initial load ───────────────────────────────────────────────────────────
+    const initAction = params.get('action');
+    const initQuery = params.get('query');
     if (currentUrl) {
+      // Existing flow: page already generated, just display it
       const label = params.get('request') || currentUrl;
       loadPage(currentUrl, label);
+    } else if (initAction === 'initial' && initQuery) {
+      // New flow: index pre-created a session and redirected here so we
+      // could show live progress while /api/generate runs. Kick it off.
+      (async () => {
+        try {
+          const data = await generate(
+            'initial',
+            { stock_query: initQuery },
+            `正在研究 ${initQuery}`,
+          );
+          // Update URL bar to include the resulting request_id + html_url so
+          // a refresh re-loads from the page cache instead of re-generating.
+          const p = new URLSearchParams({
+            session: data.session_id,
+            request: data.request_id,
+            url: data.html_url,
+          });
+          history.replaceState({}, '', `/report?${p}`);
+          if (!data.error) {
+            await loadPage(data.html_url, initQuery);
+          } else {
+            frame.src = data.html_url;
+            hideLoading();
+          }
+        } catch { /* error shown in status bar */ }
+      })();
     } else {
       hideLoading();
       showStatus('没有要显示的报告 — 请从首页开始搜索');
