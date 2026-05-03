@@ -21,6 +21,7 @@ IMPORTANT: stdout is reserved for MCP JSON-RPC frames. All logging → stderr.
 from __future__ import annotations
 
 import logging
+import socket
 import sys
 import threading
 import time
@@ -32,6 +33,12 @@ import pandas as pd
 import yfinance as yf
 from cachetools import TTLCache
 from mcp.server.fastmcp import FastMCP
+
+# Hard 60s socket timeout — without this, akshare's requests calls (and
+# yfinance) hang indefinitely when an upstream TCP connection succeeds but
+# the server stops responding. _ak() catches "timed out" as transient and
+# retries with backoff, so a single slow endpoint costs at most ~3min total.
+socket.setdefaulttimeout(60)
 
 # ── Disk cache (cross-run persistence via shared SQLite) ─────────────────────
 # Sits alongside the in-memory TTLCache. When the in-memory cache misses,
@@ -199,6 +206,49 @@ def _ak(func, *args, retries: int = 2, base_delay: float = 6.0, **kwargs):
                 raise
 
 
+# ── EM circuit breaker ────────────────────────────────────────────────────────
+# East Money rate-limits aggressively per IP. When a single EM call hangs
+# (TCP accepted, no HTTP response → socket.timeout after 60s), the next one
+# almost certainly will too. This breaker short-circuits all EM calls for
+# 3min after the first failure, so 8 parallel requests don't each waste
+# 60-180s on retries.
+_EM_BLACKLIST_UNTIL: float = 0.0
+_EM_BLACKLIST_LOCK = threading.Lock()
+_EM_COOLDOWN_S = 180
+
+
+def _em_blocked() -> bool:
+    return time.time() < _EM_BLACKLIST_UNTIL
+
+
+def _em_trip(reason: str) -> None:
+    global _EM_BLACKLIST_UNTIL
+    with _EM_BLACKLIST_LOCK:
+        was_blocked = _em_blocked()
+        _EM_BLACKLIST_UNTIL = time.time() + _EM_COOLDOWN_S
+        if not was_blocked:
+            log.warning("EM circuit tripped for %ds (reason: %s)",
+                        _EM_COOLDOWN_S, reason)
+
+
+def _em_call(func, *args, retries: int = 1, base_delay: float = 4.0, **kwargs):
+    """
+    Wrap an East Money endpoint call with a circuit breaker. If EM was
+    recently broken, raise immediately instead of waiting for another timeout.
+    On failure, trips the breaker so the next caller skips EM entirely.
+    """
+    if _em_blocked():
+        raise RuntimeError("EM circuit open — endpoint recently timed out")
+    try:
+        return _ak(func, *args, retries=retries, base_delay=base_delay, **kwargs)
+    except Exception as exc:
+        # Only trip on signs of a real EM outage / rate limit, not on data-shape
+        # errors from a successful response.
+        if any(p in str(exc) for p in _TRANSIENT):
+            _em_trip(str(exc)[:120])
+        raise
+
+
 # ── Module-level session caches ──────────────────────────────────────────────
 _SSE_DF: pd.DataFrame | None = None
 _SZE_DF: pd.DataFrame | None = None
@@ -326,7 +376,7 @@ def _basic_a(code: str) -> dict:
     # 3. Industry from EM (best-effort with retry; returns "" on failure)
     industry = ""
     try:
-        df = _ak(ak.stock_individual_info_em, symbol=code)
+        df = _em_call(ak.stock_individual_info_em, symbol=code)
         info = dict(zip(df["item"], df["value"]))
         industry = str(info.get("行业", ""))
     except Exception as exc:
@@ -347,7 +397,7 @@ def _basic_a(code: str) -> dict:
 def _basic_us_akshare(code: str) -> dict | None:
     """Try akshare US spot endpoint; return result dict on success, None on failure."""
     try:
-        df = _ak(ak.stock_us_spot_em)
+        df = _em_call(ak.stock_us_spot_em)
         code_col = _df_col(df, "代码", "symbol")
         name_col = _df_col(df, "名称", "name")
         cap_col = _df_col(df, "市值", "总市值")
@@ -756,7 +806,7 @@ def _valuation_a(code: str) -> dict:
 def _valuation_us_akshare(code: str) -> dict | None:
     """Try akshare US valuation; return result dict on success, None on failure."""
     try:
-        df = _ak(ak.stock_us_spot_em)
+        df = _em_call(ak.stock_us_spot_em)
         code_col = _df_col(df, "代码", "symbol")
         if code_col is None:
             return None
@@ -855,7 +905,7 @@ def _peers_a(code: str, n: int) -> dict:
     # ── Step 1: resolve EM industry label ────────────────────────────────
     industry = ""
     try:
-        df_info = _ak(ak.stock_individual_info_em, symbol=code,
+        df_info = _em_call(ak.stock_individual_info_em, symbol=code,
                       retries=1, base_delay=4.0)
         info = dict(zip(df_info["item"], df_info["value"]))
         industry = str(info.get("行业", ""))
@@ -872,7 +922,7 @@ def _peers_a(code: str, n: int) -> dict:
 
     # ── Step 2: fetch industry board constituents ─────────────────────────
     try:
-        df = _ak(ak.stock_board_industry_cons_em, symbol=industry,
+        df = _em_call(ak.stock_board_industry_cons_em, symbol=industry,
                  retries=1, base_delay=4.0)
     except Exception as exc:
         return _err(code, f"EM industry board '{industry}' lookup failed: {exc}")
@@ -1004,7 +1054,7 @@ def _search(query: str) -> list[dict]:
     q_upper = q.upper()
     if len(results) < 5 and q.isascii():
         try:
-            df_us = _ak(ak.stock_us_spot_em)
+            df_us = _em_call(ak.stock_us_spot_em)
             code_col_us = _df_col(df_us, "代码")
             name_col_us = _df_col(df_us, "名称")
             mc_col_us = _df_col(df_us, "总市值", "市值")
@@ -1081,7 +1131,7 @@ def get_revenue_breakdown(code: str, year: int | None = None) -> dict:
 
 def _revenue_breakdown_a(code: str, year: int | None) -> dict:
     symbol = _em_symbol(code)
-    df = _ak(ak.stock_zygc_em, symbol=symbol, retries=1, base_delay=4.0)
+    df = _em_call(ak.stock_zygc_em, symbol=symbol, retries=1, base_delay=4.0)
     if df is None or df.empty:
         return {"available": False, "reason": "stock_zygc_em returned empty",
                 "as_of": _ts(), "source": SOURCE}
@@ -1251,8 +1301,8 @@ def _top_holders_a(code: str) -> dict:
 
     top_holders: list[dict] = []
     try:
-        df = _ak(ak.stock_gdfx_top_10_em, symbol=sym_lower, date=quarter_date,
-                 retries=1, base_delay=4.0)
+        df = _em_call(ak.stock_gdfx_top_10_em, symbol=sym_lower, date=quarter_date,
+                      retries=1, base_delay=4.0)
         if df is not None and not df.empty:
             for _, row in df.iterrows():
                 name = str(row.get("股东名称", ""))
@@ -1280,7 +1330,7 @@ def _top_holders_a(code: str) -> dict:
     # North-bound holdings
     north_bound: dict = {}
     try:
-        nb_df = _ak(ak.stock_hsgt_individual_em, symbol=code, retries=1, base_delay=4.0)
+        nb_df = _em_call(ak.stock_hsgt_individual_em, symbol=code, retries=1, base_delay=4.0)
         if nb_df is not None and not nb_df.empty:
             latest = nb_df.sort_values("持股日期", ascending=False).iloc[0]
             # 30-day trend: compare latest vs 30 days ago
@@ -1355,7 +1405,7 @@ def _unlock_schedule_a(code: str, days: int) -> dict:
     start_str = start.strftime("%Y%m%d")
     end_str = end.strftime("%Y%m%d")
 
-    df = _ak(ak.stock_restricted_release_detail_em,
+    df = _em_call(ak.stock_restricted_release_detail_em,
              start_date=start_str, end_date=end_str,
              retries=1, base_delay=6.0)
 

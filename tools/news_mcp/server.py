@@ -11,6 +11,7 @@ IMPORTANT: stdout is reserved for MCP JSON-RPC. All logging → stderr.
 from __future__ import annotations
 
 import logging
+import socket
 import sys
 import threading
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,11 @@ import feedparser
 import yfinance as yf
 from cachetools import TTLCache
 from mcp.server.fastmcp import FastMCP
+
+# Hard 60s socket timeout — without this, akshare/yfinance/feedparser hang
+# indefinitely when an upstream TCP connection succeeds but the server stops
+# responding. See stock_mcp/server.py for rationale.
+socket.setdefaulttimeout(60)
 
 # ── Disk cache fallback (cross-run persistence) ─────────────────────────────
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
