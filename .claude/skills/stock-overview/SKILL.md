@@ -13,24 +13,22 @@ Otherwise: `search_stock(query=STOCK_QUERY)` → first result's `code`.
 
 ---
 
-## Step 2 — Fetch data (check data_cache.json first)
+## Step 2 — Fetch data
 
-Issue **all 8 calls simultaneously in one turn** (never call these one at a time):
+Issue **all 8 calls simultaneously in one turn** (never call these one at a
+time). Tool servers cache results to disk automatically — you do not need to
+read or write `data_cache.json`.
 
-| Cache key | Tool |
-|---|---|
-| `basic:<code>` | `get_basic_info(code)` |
-| `kline:<code>:1Y` | `get_kline(code, range="1Y")` |
-| `val:<code>` | `get_valuation(code)` |
-| `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| `fin:<code>:quarterly` | `get_financials(code, period="quarterly")` |
-| `peers:<code>:10` | `get_peers(code, n=10)` |
-| `news:<code>:30:10` | `recent_news(code, days=30, limit=10)` |
-| `ann:<code>:60` | `recent_announcements(code, days=60)` |
-
-**After all 8 results arrive**: run Phase 3.5 — write cache via Bash (python3 json.dumps).
-Cache keys: `basic:<code>`, `kline:<code>:1Y`, `val:<code>`, `fin:<code>:annual`,
-`fin:<code>:quarterly`, `peers:<code>`. Exclude `news:*` and `ann:*`.
+| Tool call |
+|---|
+| `get_basic_info(code)` |
+| `get_kline(code, range="1Y")` |
+| `get_valuation(code)` |
+| `get_financials(code, period="annual")` |
+| `get_financials(code, period="quarterly")` |
+| `get_peers(code, n=10)` |
+| `recent_news(code, days=30, limit=10)` |
+| `recent_announcements(code, days=60)` |
 
 ---
 

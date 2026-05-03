@@ -21,22 +21,20 @@ from `session/page_stack.json` to get `stock_name`.
 
 ---
 
-## Step 2 — Fetch data (check data_cache.json first)
+## Step 2 — Fetch data
 
-| Category | Cache key | Tool |
-|---|---|---|
-| valuation | `val:<code>` | `get_valuation(code)` |
-| valuation | `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| profitability | `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| income | `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| income | `fin:<code>:quarterly` | `get_financials(code, period="quarterly")` |
-| price | `kline:<code>:5Y` | `get_kline(code, range="5Y")` |
-| all | `peers:<code>:5` | `get_peers(code, n=5)` |
+Tool servers cache results to disk automatically — do not maintain
+`data_cache.json`. Issue all applicable calls **simultaneously in one turn**.
 
-Issue all applicable calls **simultaneously**.
-
-**After results**: write cache via Bash (json.dumps).
-Cache keys: `val:*`, `fin:*`, `kline:*`, `peers:*`.
+| Category | Tool call |
+|---|---|
+| valuation | `get_valuation(code)` |
+| valuation | `get_financials(code, period="annual")` |
+| profitability | `get_financials(code, period="annual")` |
+| income | `get_financials(code, period="annual")` |
+| income | `get_financials(code, period="quarterly")` |
+| price | `get_kline(code, range="5Y")` |
+| all | `get_peers(code, n=5)` |
 
 ---
 

@@ -35,6 +35,15 @@ import numpy as np
 from cachetools import TTLCache
 from mcp.server.fastmcp import FastMCP
 
+# ── Disk cache fallback (cross-run persistence) ─────────────────────────────
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+try:
+    from _shared.cache_store import disk_get, disk_set, ttl_for  # noqa: E402
+except ImportError:  # pragma: no cover
+    def disk_get(key): return None
+    def disk_set(key, value, ttl_s): return None
+    def ttl_for(key): return 0
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -53,12 +62,22 @@ _LOCK = threading.Lock()
 
 def _cache_get(key: str) -> Any | None:
     with _LOCK:
-        return _CACHE.get(key)
+        v = _CACHE.get(key)
+    if v is not None:
+        return v
+    v = disk_get(key)
+    if v is not None:
+        with _LOCK:
+            _CACHE[key] = v
+    return v
 
 
 def _cache_set(key: str, val: Any) -> None:
     with _LOCK:
         _CACHE[key] = val
+    ttl = ttl_for(key)
+    if ttl > 0:
+        disk_set(key, val, ttl)
 
 
 def _ts() -> str:
@@ -182,12 +201,20 @@ def kline_svg(
            same shape as stock_mcp.get_kline returns.
     Returns: {svg, caption, as_of}.
     """
-    cache_key = f"kline:{len(ohlcv)}:{width}:{height}"
-    if hit := _cache_get(cache_key):
-        return hit
-
     if not ohlcv:
         return {"svg": _NO_DATA_SVG, "caption": "No data", "as_of": _ts()}
+
+    # Cache key MUST include ohlcv contents — the previous version keyed only
+    # on len(ohlcv)/width/height, which collided across stocks with the same
+    # bar count. Hash date+close pairs as a stable per-stock fingerprint.
+    import hashlib
+    fingerprint = "|".join(
+        f"{b.get('date','')}:{b.get('close','')}" for b in ohlcv
+    )
+    digest = hashlib.md5(fingerprint.encode("utf-8")).hexdigest()[:12]
+    cache_key = f"kline:{digest}:{width}:{height}"
+    if hit := _cache_get(cache_key):
+        return hit
 
     # Downsample to max 60 bars (≈weekly for 1Y).
     # 120 bars → ~72K JSON chars which exceeds Claude's ~71K tool-result limit;

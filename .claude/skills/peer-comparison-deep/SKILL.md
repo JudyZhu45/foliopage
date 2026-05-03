@@ -12,30 +12,30 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`. This is the **subject*
 
 ---
 
-## Step 2 — Fetch data (check data_cache.json first)
+## Step 2 — Fetch data
 
-**Batch A** — all simultaneous:
+Tool servers cache results to disk automatically — do not maintain
+`data_cache.json`.
 
-| Cache key | Tool |
-|---|---|
-| `basic:<code>` | `get_basic_info(code)` |
-| `val:<code>` | `get_valuation(code)` |
-| `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| `peers:<code>:10` | `get_peers(code, n=10)` |
+**Batch A** — all simultaneous in one turn:
+
+| Tool call |
+|---|
+| `get_basic_info(code)` |
+| `get_valuation(code)` |
+| `get_financials(code, period="annual")` |
+| `get_peers(code, n=10)` |
 
 **Batch B** — apply hybrid peer selection (same as stock-overview Step 3) to
-identify top 5 verified peers. Then for each selected peer, fetch simultaneously:
+identify top 5 verified peers. Then for each selected peer, fetch in parallel:
 
-| Cache key | Tool |
-|---|---|
-| `basic:<peer_code>` | `get_basic_info(peer_code)` |
-| `val:<peer_code>` | `get_valuation(peer_code)` |
-| `fin:<peer_code>:annual` | `get_financials(peer_code, period="annual")` |
+| Tool call |
+|---|
+| `get_basic_info(peer_code)` |
+| `get_valuation(peer_code)` |
+| `get_financials(peer_code, period="annual")` |
 
 If any peer tool returns an error: use `null` for missing fields — do not drop the peer.
-
-**After all results**: write cache via Bash (json.dumps).
-Cache keys: `basic:*`, `val:*`, `fin:*:annual`, `peers:<code>:10`.
 
 ---
 

@@ -6,7 +6,6 @@ so chart SVGs are generated server-side after the agent produces JSON output.
 """
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
@@ -75,13 +74,10 @@ def _generate_overview_charts(data: dict, workspace: Path) -> dict[str, str]:
     result: dict[str, str] = {}
 
     try:
+        # SKILL.md mandates that the agent inline `kline_bars` in its JSON.
+        # If absent, the chart simply renders empty (no silent fallback that
+        # could surface stale data from a previous session).
         bars: list[dict] = data.get("kline_bars") or []
-        if not bars:
-            cache_path = workspace / "session" / "data_cache.json"
-            if cache_path.exists():
-                cache = json.loads(cache_path.read_text(encoding="utf-8"))
-                entry = cache.get(f"kline:{stock_code}:1Y", {}).get("data", {})
-                bars = entry.get("bars", entry) if isinstance(entry, dict) else entry
         kline_result = _kline_svg_fn(ohlcv=bars or [], width=560, height=220)
         result["kline"] = kline_result["svg"]
     except Exception as exc:

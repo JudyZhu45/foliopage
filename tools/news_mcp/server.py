@@ -23,6 +23,15 @@ import yfinance as yf
 from cachetools import TTLCache
 from mcp.server.fastmcp import FastMCP
 
+# ── Disk cache fallback (cross-run persistence) ─────────────────────────────
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+try:
+    from _shared.cache_store import disk_get, disk_set, ttl_for  # noqa: E402
+except ImportError:  # pragma: no cover
+    def disk_get(key): return None
+    def disk_set(key, value, ttl_s): return None
+    def ttl_for(key): return 0
+
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -41,12 +50,22 @@ _LOCK = threading.Lock()
 
 def _cache_get(key: str) -> Any | None:
     with _LOCK:
-        return _CACHE.get(key)
+        v = _CACHE.get(key)
+    if v is not None:
+        return v
+    v = disk_get(key)
+    if v is not None:
+        with _LOCK:
+            _CACHE[key] = v
+    return v
 
 
 def _cache_set(key: str, val: Any) -> None:
     with _LOCK:
         _CACHE[key] = val
+    ttl = ttl_for(key)
+    if ttl > 0:
+        disk_set(key, val, ttl)
 
 
 def _ts() -> str:

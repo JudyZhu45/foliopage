@@ -468,3 +468,9 @@ def create_app(config: Config | None = None) -> FastAPI:
         return await _back(session_id)
 
     return app
+
+
+# Module-level ASGI app for `uvicorn orchestrator.server:app` (used by Makefile
+# `make dev` for hot-reload). Reads config from env on import. The cli entry
+# point in __init__.py builds its own app from CLI args separately.
+app = create_app()

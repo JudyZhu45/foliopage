@@ -12,20 +12,17 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`.
 
 ---
 
-## Step 2 — Fetch data (check data_cache.json first)
+## Step 2 — Fetch data
 
-Issue **all 4 calls simultaneously**:
+Issue **all 4 calls simultaneously in one turn**. Tool servers cache results
+to disk automatically — do not read or write `data_cache.json`.
 
-| Cache key | Tool |
-|---|---|
-| `basic:<code>` | `get_basic_info(code)` |
-| `revbk:<code>:latest` | `get_revenue_breakdown(code)` |
-| `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| `peers:<code>:10` | `get_peers(code, n=10)` |
-
-**After results arrive**: write cache via Bash (json.dumps).
-Cache keys: `basic:<code>`, `fin:<code>:annual`, `peers:<code>:10`.
-**Never cache** `revbk:*` (may contain special characters).
+| Tool call |
+|---|
+| `get_basic_info(code)` |
+| `get_revenue_breakdown(code)` |
+| `get_financials(code, period="annual")` |
+| `get_peers(code, n=10)` |
 
 If `revbk` returns `available: false`, set `"available": false` in the JSON
 and skip all product/region fields. The renderer will show an unavailability notice.

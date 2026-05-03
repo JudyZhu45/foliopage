@@ -33,6 +33,18 @@ import yfinance as yf
 from cachetools import TTLCache
 from mcp.server.fastmcp import FastMCP
 
+# ── Disk cache (cross-run persistence via shared SQLite) ─────────────────────
+# Sits alongside the in-memory TTLCache. When the in-memory cache misses,
+# fall through to ~/.foliopage/cache.db; on hit, warm the in-memory layer
+# for the rest of this process's lifetime.
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+try:
+    from _shared.cache_store import disk_get, disk_set, ttl_for  # noqa: E402
+except ImportError:  # pragma: no cover — fallback if launched outside repo
+    def disk_get(key): return None
+    def disk_set(key, value, ttl_s): return None
+    def ttl_for(key): return 0
+
 # ── Logging (stderr only) ────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -72,12 +84,25 @@ def _sina_symbol(code: str) -> str:
 
 def _cache_get(key: str) -> Any | None:
     with _LOCK:
-        return _CACHE.get(key)
+        v = _CACHE.get(key)
+    if v is not None:
+        return v
+    # Disk fallback — survives across agent runs
+    v = disk_get(key)
+    if v is not None:
+        with _LOCK:
+            _CACHE[key] = v
+    return v
 
 
 def _cache_set(key: str, value: Any) -> None:
     with _LOCK:
         _CACHE[key] = value
+    # Persist to disk with a key-prefix-based TTL (see _shared.cache_store).
+    # Errors there are logged + swallowed so a bad disk doesn't break tools.
+    ttl = ttl_for(key)
+    if ttl > 0:
+        disk_set(key, value, ttl)
 
 
 def _err(code: str, msg: str) -> dict:

@@ -13,22 +13,20 @@ Read `CLICKED_CONTEXT` for `stock_code` and `stock_name`.
 
 ---
 
-## Step 2 — Fetch data (check data_cache.json first)
+## Step 2 — Fetch data
 
-Issue **all 6 calls simultaneously in one turn** (never call these one at a time):
+Issue **all 6 calls simultaneously in one turn** (never call these one at a
+time). Tool servers cache results to disk automatically — do not maintain
+`data_cache.json`.
 
-| Cache key | Tool |
-|---|---|
-| `basic:<code>` | `get_basic_info(code)` |
-| `val:<code>` | `get_valuation(code)` |
-| `kline:<code>:5Y` | `get_kline(code, range="5Y")` |
-| `fin:<code>:annual` | `get_financials(code, period="annual")` |
-| `peers:<code>:10` | `get_peers(code, n=10)` |
-| `analyst:<code>` | `analyst_consensus(code)` |
-
-**After all results arrive**: write cache via Bash (python3 json.dumps).
-Cache keys: `basic:<code>`, `val:<code>`, `fin:<code>:annual`, `peers:<code>:10`.
-**Never cache** `analyst:*`.
+| Tool call |
+|---|
+| `get_basic_info(code)` |
+| `get_valuation(code)` |
+| `get_kline(code, range="5Y")` |
+| `get_financials(code, period="annual")` |
+| `get_peers(code, n=10)` |
+| `analyst_consensus(code)` |
 
 `val:<code>` data now includes `pe_history` — a list of `{date, pe}` dicts.
 Copy it verbatim into the JSON output (see schema below).

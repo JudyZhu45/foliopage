@@ -9,19 +9,17 @@ Parse `CLICKED_CONTEXT` for `stock_code`. Read `PARENT_PAGE` from
 
 ---
 
-## Step 1 — Fetch data (check data_cache.json first)
+## Step 1 — Fetch data
 
-Issue **all 4 calls simultaneously**:
+Issue **all 4 calls simultaneously in one turn**. Tool servers cache results
+to disk automatically — do not maintain `data_cache.json`.
 
-| Cache key | Tool call |
-|---|---|
-| `news:<code>:30:20` | `recent_news(code, days=30, limit=20)` |
-| `ann:<code>:90` | `recent_announcements(code, days=90)` |
-| `analyst:<code>` | `analyst_consensus(code)` |
-| `kline:<code>:3M` | `get_kline(code, range="3M")` |
-
-**After all results**: write `kline:<code>:3M` to cache only.
-**Never cache** `news:*`, `ann:*`, `analyst:*`.
+| Tool call |
+|---|
+| `recent_news(code, days=30, limit=20)` |
+| `recent_announcements(code, days=90)` |
+| `analyst_consensus(code)` |
+| `get_kline(code, range="3M")` |
 
 ---
 

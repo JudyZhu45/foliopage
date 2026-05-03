@@ -25,20 +25,19 @@ Variables after this step: `subject_code`, `subject_name`, `peer_code`, `peer_na
 
 ---
 
-## Step 2 — Fetch data (check data_cache.json first for each key)
+## Step 2 — Fetch data
 
-Issue all **6 calls simultaneously**:
+Issue all **6 calls simultaneously in one turn**. Tool servers cache results
+to disk automatically — do not maintain `data_cache.json`.
 
-| Cache key | Tool |
-|---|---|
-| `basic:<subject_code>` | `get_basic_info(subject_code)` |
-| `val:<subject_code>` | `get_valuation(subject_code)` |
-| `fin:<subject_code>:annual` | `get_financials(subject_code, period="annual")` |
-| `basic:<peer_code>` | `get_basic_info(peer_code)` |
-| `val:<peer_code>` | `get_valuation(peer_code)` |
-| `fin:<peer_code>:annual` | `get_financials(peer_code, period="annual")` |
-
-**After results**: write cache via Bash (json.dumps) for all 6 keys.
+| Tool call |
+|---|
+| `get_basic_info(subject_code)` |
+| `get_valuation(subject_code)` |
+| `get_financials(subject_code, period="annual")` |
+| `get_basic_info(peer_code)` |
+| `get_valuation(peer_code)` |
+| `get_financials(peer_code, period="annual")` |
 
 ---
 

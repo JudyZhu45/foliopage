@@ -42,10 +42,12 @@ def run_agent(
 
     The agent is expected to:
     - Read CLAUDE.md from the workspace (symlinked by Session)
-    - Write output/page-<request_id>.html
-    - Update session/page_stack.json and session/data_cache.json
+    - Write output/data-<request_id>.json (preferred) or output/page-<request_id>.html
+    - Append one entry to session/page_stack.json
 
-    The orchestrator does NOT touch those files — the agent owns them.
+    Caching is handled transparently inside the MCP tool servers
+    (~/.foliopage/cache.db); the agent does not need to maintain its own
+    data_cache.json.
     """
     import time
 
