@@ -43,3 +43,22 @@ shell/pages/
 AGENTS.md.local
 CLAUDE.local.md
 *.session.jsonl
+
+# Runtime artifacts produced by local agent runs
+*.log
+*.tmp
+*~
+tmp_*.py
+tmp_*.json
+tmp_*.html
+/tmp_*
+
+# Local OS / editor extras (extra safety on top of system rules)
+Thumbs.db
+ehthumbs.db
+*.bak
+*.orig
+
+# Local-only env overrides
+.env.*
+!.env.example
