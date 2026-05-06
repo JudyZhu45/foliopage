@@ -186,6 +186,12 @@ MIT — see [`LICENSE`](LICENSE).
 
 ---
 
+## Get in touch
+
+If you find this project interesting — whether you're thinking about contributing, building something similar, or just want to talk about local-first AI tooling — feel free to reach out. Open an issue or find me on GitHub ([@JudyZhu45](https://github.com/JudyZhu45)).
+
+---
+
 ## Acknowledgments
 
 - [akshare](https://akshare.akfamily.xyz/) — free A-share and ETF data

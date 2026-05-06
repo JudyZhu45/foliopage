@@ -24,7 +24,7 @@ Tool servers cache results to disk automatically — do not maintain
 | `get_basic_info(code)` |
 | `get_valuation(code)` |
 | `get_financials(code, period="annual")` |
-| `get_peers(code, n=10)` |
+| `get_peers(code, n=6)` |
 
 **Batch B** — apply hybrid peer selection (same as stock-overview Step 3) to
 identify top 5 verified peers. Then for each selected peer, fetch in parallel:
@@ -58,71 +58,19 @@ quadrants based on `gross_margin_pct` vs `revenue_cagr_3y` relative to peer medi
 
 ```json
 {
-  "meta": {
-    "stock_code": "<code>",
-    "stock_name": "<name>",
-    "skill": "peer-comparison-deep",
-    "as_of": "<ISO datetime>"
-  },
-  "hero": {
-    "industry": "<sector>",
-    "exchange": "<SH|SZ|HK|…>",
-    "peer_count": <int>
-  },
-  "subject": {
-    "code": "<code>",
-    "name": "<name>",
-    "market_cap_yi": <亿元 or null>,
-    "pe_ttm": <or null>,
-    "pb": <or null>,
-    "ev_ebitda": <or null>,
-    "gross_margin_pct": <or null>,
-    "net_margin_pct": <or null>,
-    "roe_pct": <or null>,
-    "revenue_cagr_3y": <% or null>
-  },
-  "peers": [
-    {
-      "code": "<code>",
-      "name": "<name>",
-      "market_cap_yi": <or null>,
-      "pe_ttm": <or null>,
-      "pb": <or null>,
-      "ev_ebitda": <or null>,
-      "gross_margin_pct": <or null>,
-      "net_margin_pct": <or null>,
-      "roe_pct": <or null>,
-      "revenue_cagr_3y": <% or null>
-    }
-  ],
-  "radar_subject": {
-    "code": "<code>",
-    "name": "<name>",
-    "pe": <or null>,
-    "pb": <or null>,
-    "gross_margin": <or null>,
-    "roe": <or null>,
-    "revenue_cagr_3y": <or null>
-  },
-  "radar_peers": [...],
+  "meta": {"stock_code": "<code>", "stock_name": "<name>", "skill": "peer-comparison-deep", "as_of": "<ISO datetime>"},
+  "hero": {"industry": "<sector>", "exchange": "<SH|SZ|HK|…>", "peer_count": 0},
+  "subject": {"code": "<code>", "name": "<name>", "market_cap_yi": null, "pe_ttm": null, "pb": null, "ev_ebitda": null, "gross_margin_pct": null, "net_margin_pct": null, "roe_pct": null, "revenue_cagr_3y": null},
+  "peers": [{"code": "<code>", "name": "<name>", "market_cap_yi": null, "pe_ttm": null, "pb": null, "ev_ebitda": null, "gross_margin_pct": null, "net_margin_pct": null, "roe_pct": null, "revenue_cagr_3y": null}],
+  "radar_subject": {"code": "<code>", "name": "<name>", "pe": null, "pb": null, "gross_margin": null, "roe": null, "revenue_cagr_3y": null},
+  "radar_peers": [{"code": "<code>", "name": "<name>", "pe": null, "pb": null, "gross_margin": null, "roe": null, "revenue_cagr_3y": null}],
   "radar_metrics": ["pe", "pb", "gross_margin", "roe", "revenue_cagr_3y"],
   "bar_metric_1": "毛利率(%)",
-  "bar_items_1": [
-    {"code": "<code>", "name": "<name>", "毛利率(%)": <gross_margin_pct or null>}
-  ],
+  "bar_items_1": [{"code": "<code>", "name": "<name>", "毛利率(%)": null}],
   "bar_metric_2": "ROE(%)",
-  "bar_items_2": [
-    {"code": "<code>", "name": "<name>", "ROE(%)": <roe_pct or null>}
-  ],
-  "positioning_matrix": [
-    {
-      "code": "<code>",
-      "name": "<name>",
-      "quadrant": "优质成长|价值防御|规模扩张|效率改善",
-      "note": "<one sentence why>"
-    }
-  ],
-  "competitive_analysis": "<4-5 paragraphs separated by \\n\\n: strengths vs peer median, most similar peer, biggest valuation gap, overall assessment. ≥3 [[code|name]] links>",
+  "bar_items_2": [{"code": "<code>", "name": "<name>", "ROE(%)": null}],
+  "positioning_matrix": [{"code": "<code>", "name": "<name>", "quadrant": "优质成长|价值防御|规模扩张|效率改善", "note": "<one sentence>"}],
+  "competitive_analysis": "<4-5 paragraphs \\n\\n: strengths vs median, similar peer, valuation gap, overall. ≥3 [[code|name]]>",
   "pull_quote": "<sharpest cross-peer contrast>"
 }
 ```
@@ -141,7 +89,7 @@ quadrants based on `gross_margin_pct` vs `revenue_cagr_3y` relative to peer medi
      "stock_name": "<name>",
      "skill_used": "peer-comparison-deep",
      "summary": "Multi-metric peer comparison: radar, bar charts, positioning matrix",
-     "data_keys_used": ["basic:<code>", "val:<code>", "fin:<code>:annual", "peers:<code>:10"],
+     "data_keys_used": ["basic:<code>", "val:<code>", "fin:<code>:annual", "peers:<code>:6"],
      "parent_request_id": "<from CLICKED_CONTEXT or page_stack>",
      "created_at": "<ISO datetime>"
    }

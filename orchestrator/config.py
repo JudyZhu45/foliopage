@@ -60,6 +60,22 @@ class Config:
     log_level: str = field(
         default_factory=lambda: os.environ.get("FOLIOPAGE_LOG_LEVEL", "INFO")
     )
+    # Multi-agent parallel mode (feature flag — off by default)
+    use_parallel_agents: bool = field(
+        default_factory=lambda: os.environ.get(
+            "FOLIOPAGE_USE_PARALLEL_AGENTS", "false"
+        ).lower() == "true"
+    )
+    # Per-worker subprocess timeouts (seconds)
+    worker_timeouts: dict = field(
+        default_factory=lambda: {"A": 120, "B": 120, "C": 90, "D": 150}
+    )
+    # Analyst agent timeout (seconds) — analysis only, no data fetch
+    analyst_timeout: int = field(
+        default_factory=lambda: int(
+            os.environ.get("FOLIOPAGE_ANALYST_TIMEOUT", "360")
+        )
+    )
 
     @classmethod
     def from_env(cls) -> Config:

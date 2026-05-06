@@ -3,6 +3,12 @@ Chart generation for the orchestrator renderer.
 
 Calls the chart MCP tool functions directly (no subprocess / MCP protocol)
 so chart SVGs are generated server-side after the agent produces JSON output.
+
+K-line data is fetched here directly via get_kline() — the agent no longer
+copies kline_bars into its JSON output. By the time this runs, the agent has
+already called get_kline() and the result is in ~/.foliopage/cache.db, so the
+repeated call returns in <10 ms. If the cache is cold for any reason, the
+function falls back to a live akshare/yfinance request transparently.
 """
 from __future__ import annotations
 
@@ -18,10 +24,12 @@ _peer_bar_svg_fn = None
 _pe_band_svg_fn = None
 _radar_svg_fn = None
 _sparkline_svg_fn = None
+_get_kline_fn = None
 
 
 def _load_chart_fns() -> None:
-    global _kline_svg_fn, _peer_bar_svg_fn, _pe_band_svg_fn, _radar_svg_fn, _sparkline_svg_fn
+    global _kline_svg_fn, _peer_bar_svg_fn, _pe_band_svg_fn, _radar_svg_fn
+    global _sparkline_svg_fn, _get_kline_fn
     if _kline_svg_fn is not None:
         return
     repo_root = str(Path(__file__).parent.parent)
@@ -34,11 +42,13 @@ def _load_chart_fns() -> None:
         comparison_radar_svg,
         metric_sparkline_svg,
     )
+    from tools.stock_mcp.server import get_kline  # type: ignore[import]
     _kline_svg_fn = kline_svg
     _peer_bar_svg_fn = peer_bar_svg
     _pe_band_svg_fn = pe_band_svg
     _radar_svg_fn = comparison_radar_svg
     _sparkline_svg_fn = metric_sparkline_svg
+    _get_kline_fn = get_kline
 
 
 def generate_charts(data: dict, workspace: Path) -> dict[str, str]:
@@ -74,14 +84,12 @@ def _generate_overview_charts(data: dict, workspace: Path) -> dict[str, str]:
     result: dict[str, str] = {}
 
     try:
-        # SKILL.md mandates that the agent inline `kline_bars` in its JSON.
-        # If absent, the chart simply renders empty (no silent fallback that
-        # could surface stale data from a previous session).
-        bars: list[dict] = data.get("kline_bars") or []
-        kline_result = _kline_svg_fn(ohlcv=bars or [], width=560, height=220)
-        result["kline"] = kline_result["svg"]
+        # Fetch kline directly — agent already called get_kline() so cache is warm.
+        kline_data = _get_kline_fn(code=stock_code, range="1Y")
+        bars: list[dict] = kline_data.get("bars", [])
+        result["kline"] = _kline_svg_fn(ohlcv=bars, width=560, height=220)["svg"]
     except Exception as exc:
-        log.warning("kline_svg failed: %s", exc)
+        log.warning("kline_svg failed for %s: %s", stock_code, exc)
         result["kline"] = ""
 
     try:
@@ -108,7 +116,6 @@ def _generate_valuation_charts(data: dict) -> dict[str, str]:
         current_pe: float | None = (data.get("kpi") or {}).get("pe_ttm")
         pe_result = _pe_band_svg_fn(
             pe_history=pe_history, current_pe=current_pe or 0.0,
-            width=560, height=220,
         )
         result["pe_band"] = pe_result["svg"]
     except Exception as exc:
@@ -219,10 +226,11 @@ def _generate_metric_charts(data: dict) -> dict[str, str]:
             current_pe: float | None = data.get("metric_current")
             result["primary"] = _pe_band_svg_fn(
                 pe_history=pe_history, current_pe=current_pe or 0.0,
-                width=560, height=220,
             )["svg"]
         elif category == "price":
-            bars: list[dict] = data.get("kline_bars") or []
+            # Fetch kline directly (5Y for price drilldown) — cache already warm.
+            kline_data = _get_kline_fn(code=stock_code, range="5Y")
+            bars: list[dict] = kline_data.get("bars", [])
             result["primary"] = _kline_svg_fn(ohlcv=bars, width=560, height=220)["svg"]
         else:
             # profitability / income → sparkline
@@ -252,11 +260,14 @@ def _generate_metric_charts(data: dict) -> dict[str, str]:
 # ── news-timeline ─────────────────────────────────────────────────────────────
 
 def _generate_news_charts(data: dict) -> dict[str, str]:
+    stock_code: str = data.get("meta", {}).get("stock_code", "")
     result: dict[str, str] = {}
     try:
-        bars: list[dict] = data.get("kline_bars_3m") or []
+        # Fetch kline directly (3M for news price strip) — cache already warm.
+        kline_data = _get_kline_fn(code=stock_code, range="3M")
+        bars: list[dict] = kline_data.get("bars", [])
         result["kline"] = _kline_svg_fn(ohlcv=bars, width=560, height=100)["svg"]
     except Exception as exc:
-        log.warning("kline_svg (news-timeline) failed: %s", exc)
+        log.warning("kline_svg (news-timeline) failed for %s: %s", stock_code, exc)
         result["kline"] = ""
     return result

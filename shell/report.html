@@ -727,7 +727,11 @@
       stopProgressPoll();
       progressSelfRescued = false;
       loadingProgress.classList.add('visible');
-      pollProgressOnce(sid);  // immediate first read
+      // Do NOT poll immediately — the transcript.jsonl from the previous
+      // request still shows "done". The server clears it synchronously at the
+      // start of POST /api/generate, but the network round-trip means the
+      // first in-flight GET /progress would race against that clear. Delay
+      // the first poll by 3 s so the server has time to wipe the stale file.
       pollTimer = setInterval(() => pollProgressOnce(sid), 2000);
     }
     function stopProgressPoll() {

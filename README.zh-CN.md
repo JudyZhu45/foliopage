@@ -188,6 +188,12 @@ MIT — 见 [`LICENSE`](LICENSE)。
 
 ---
 
+## 联系我
+
+如果你对这个项目感兴趣——不管是想参与贡献、做类似的东西，还是单纯想聊聊 local-first AI 工具——欢迎来找我。提 issue 或者在 GitHub 上找我（[@JudyZhu45](https://github.com/JudyZhu45)）。
+
+---
+
 ## 致谢
 
 - [akshare](https://akshare.akfamily.xyz/) — 免费 A 股和 ETF 数据

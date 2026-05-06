@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from .agent_runner import run_agent
 from .renderer import render_page
+from .research_coordinator import run_parallel_agent, run_parallel_drilldown_agent
 from .config import Config
 from .errors import (
     AgentDidNotProduceOutputError,
@@ -35,6 +36,18 @@ from .session import Session
 _INITIAL_ACTIONS = {"initial"}
 _DRILLDOWN_ACTIONS = {"drilldown", "drill_down"}
 _PEER_ACTIONS = {"peer_switch"}
+
+# Map clicked_topic → skill name (for parallel drilldown routing)
+_DRILL_SKILL_MAP: dict[str, str] = {
+    "metric_drilldown": "metric-drilldown",
+    "news_timeline": "news-timeline",
+    "peer_comparison": "peer-comparison",
+    "business_breakdown": "business-breakdown",
+    "valuation_deep": "valuation-deep",
+    "peer_comparison_deep": "peer-comparison-deep",
+}
+# Skills that have parallel worker support
+_PARALLEL_DD_SKILLS = frozenset(_DRILL_SKILL_MAP.values()) - {"peer-comparison"}
 
 
 # ── Request / response models at module level so FastAPI can resolve them ─────
@@ -217,6 +230,13 @@ def create_app(config: Config | None = None) -> FastAPI:
         ctx = req.context
         action = req.action.lower()
 
+        # Clear the previous request's transcript immediately so the progress
+        # poller doesn't see a stale "done" event and fire rescueFromStack
+        # before the new agent has a chance to start.
+        _transcript_path = session.workspace / "logs" / "transcript.jsonl"
+        _transcript_path.parent.mkdir(parents=True, exist_ok=True)
+        _transcript_path.write_text("")
+
         current_stack = session.page_stack()
         parent_request_id = current_stack[-1].request_id if current_stack else ""
 
@@ -244,6 +264,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             prompt = build_drilldown_prompt(
                 request_id=request_id,
                 stock_query=stock_code,
+                stock_code=stock_code,
+                stock_name=ctx.get("stock_name", ""),
                 clicked_topic=clicked_topic,
                 clicked_context=ctx.get("clicked_context", {}),
                 parent_request_id=parent_request_id,
@@ -295,17 +317,60 @@ def create_app(config: Config | None = None) -> FastAPI:
 
         error_html: str | None = None
 
+        # Parallel mode: initial + peer_switch use multi-agent pipeline.
+        # drill_down also uses parallel pipeline for supported skills.
+        _use_parallel = cfg.use_parallel_agents
+        _dd_skill = _DRILL_SKILL_MAP.get(clicked_topic if action in _DRILLDOWN_ACTIONS else "")
+        _use_parallel_dd = (
+            _use_parallel
+            and action in _DRILLDOWN_ACTIONS
+            and _dd_skill in _PARALLEL_DD_SKILLS
+        )
+
         async with _sem[0]:
             try:
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: run_agent(
+                if _use_parallel and action in (_INITIAL_ACTIONS | _PEER_ACTIONS):
+                    result = await run_parallel_agent(
                         prompt=prompt,
                         request_id=request_id,
                         workspace=session.workspace,
                         config=cfg,
-                    ),
-                )
+                        action=action,
+                        stock_query=(
+                            ctx.get("stock_query")
+                            or ctx.get("stock_code")
+                            or ctx.get("peer_code", "")
+                        ),
+                        hint=ctx.get("hint", ""),
+                        parent_request_id=parent_request_id,
+                    )
+                elif _use_parallel_dd:
+                    result = await run_parallel_drilldown_agent(
+                        prompt=prompt,
+                        request_id=request_id,
+                        workspace=session.workspace,
+                        config=cfg,
+                        action=action,
+                        stock_code=stock_code,
+                        stock_name=ctx.get("stock_name", ""),
+                        skill=_dd_skill,
+                        clicked_topic=clicked_topic,
+                        clicked_context_str=json.dumps(
+                            ctx.get("clicked_context", {}), ensure_ascii=False
+                        ),
+                        hint=ctx.get("hint", ""),
+                        parent_request_id=parent_request_id,
+                    )
+                else:
+                    result = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: run_agent(
+                            prompt=prompt,
+                            request_id=request_id,
+                            workspace=session.workspace,
+                            config=cfg,
+                        ),
+                    )
             except AgentTimeoutError as exc:
                 error_html = _build_error_html(
                     title="生成超时",

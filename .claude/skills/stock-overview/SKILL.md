@@ -15,20 +15,19 @@ Otherwise: `search_stock(query=STOCK_QUERY)` → first result's `code`.
 
 ## Step 2 — Fetch data
 
-Issue **all 8 calls simultaneously in one turn** (never call these one at a
+Issue **all 7 calls simultaneously in one turn** (never call these one at a
 time). Tool servers cache results to disk automatically — you do not need to
 read or write `data_cache.json`.
 
 | Tool call |
 |---|
 | `get_basic_info(code)` |
-| `get_kline(code, range="1Y")` |
 | `get_valuation(code)` |
 | `get_financials(code, period="annual")` |
 | `get_financials(code, period="quarterly")` |
-| `get_peers(code, n=10)` |
-| `recent_news(code, days=30, limit=10)` |
-| `recent_announcements(code, days=60)` |
+| `get_peers(code, n=6)` |
+| `recent_news(code, days=14, limit=7)` |
+| `recent_announcements(code, days=30)` |
 
 ---
 
@@ -39,10 +38,10 @@ read or write `data_cache.json`.
 **3b — Business profile:** synthesise from `basic_info.sector` and themes in
 `recent_news` to understand the company's primary business.
 
-**3c — LLM nominations (optional):** if database candidates miss obvious peers by
-business similarity, nominate up to 3 additional codes from knowledge.
-For EACH nomination, call `get_basic_info(nominated_code)`. If the call fails or
-the business doesn't match: DROP the nomination.
+**3c — LLM nominations (conditional):** only if `get_peers` returned
+`confidence=low` AND obvious peers are clearly missing, nominate at most **1**
+additional code from knowledge. Call `get_basic_info(nominated_code)`; if the
+call fails or the business doesn't match, DROP it.
 Do NOT fetch val or fin data for peer nominations — only `get_basic_info` is allowed.
 
 **3d — Final selection:** select top 5 verified candidates by business similarity.
@@ -54,20 +53,15 @@ For each, write a 1-sentence `reason`. Render fewer if < 5 confident matches.
 
 ## Step 4 — Write output JSON
 
-Write the following JSON to `output/data-<REQUEST_ID>.json` using the Bash tool
-with Python's `json.dumps` to ensure correct escaping:
+Use the **Write tool** to write a Python script `gen_json.py`, then run it with Bash:
 
 ```bash
-python3 << 'PYEOF'
-import json, pathlib
-data = {
-    # ... full dict below ...
-}
-pathlib.Path("output/data-<REQUEST_ID>.json").write_text(
-    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-)
-PYEOF
+python3 gen_json.py && rm gen_json.py && echo "DONE"
 ```
+
+The Python script must call `json.dumps(data, ensure_ascii=False, indent=2)` and write to
+`output/data-<REQUEST_ID>.json`. Using the Write tool (not a Bash heredoc) avoids shell
+quoting errors when string values contain double-quote characters.
 
 **Peer link markup:** in all narrative text fields (`business_overview`,
 `industry_context`, `peers_narrative`, `analysis`), wrap peer company names
@@ -77,7 +71,7 @@ Use this markup for **≥5 company name mentions** across all narrative fields c
 **Numerical precision:** 2 decimal places for ratios; 1 decimal for large 亿元 values.
 **Never invent numbers** — every value must come from a tool result or be `null`.
 
-**`kline_bars` is mandatory.** Copy the full `bars` array from `get_kline()` verbatim into this field. The server uses it to render the price chart — do NOT summarise, truncate, or omit it. If `get_kline()` returned no bars, set this field to `[]`.
+**K-line chart:** the server fetches kline data directly from cache — do NOT include a `kline_bars` field in your JSON output.
 
 ### JSON schema
 
@@ -108,9 +102,6 @@ Use this markup for **≥5 company name mentions** across all narrative fields c
     "dividend_yield_pct": <or null>,
     "as_of": "<date string>"
   },
-  "kline_bars": [
-    {"date": "YYYY-MM-DD", "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0, "volume": 0}
-  ],
   "business_overview": "<one paragraph with ≥2 [[code|name]] links>",
   "financials_annual": [
     {
@@ -203,7 +194,7 @@ Use this markup for **≥5 company name mentions** across all narrative fields c
      "stock_name": "<name>",
      "skill_used": "stock-overview",
      "summary": "14-section overview: KPI, K-line, financials, peers, news",
-     "data_keys_used": ["basic:<code>", "kline:<code>:1Y", "val:<code>", "fin:<code>:annual", "fin:<code>:quarterly", "peers:<code>:10"],
+     "data_keys_used": ["basic:<code>", "kline:<code>:1Y", "val:<code>", "fin:<code>:annual", "fin:<code>:quarterly", "peers:<code>:6"],
      "parent_request_id": null,
      "created_at": "<ISO datetime>"
    }

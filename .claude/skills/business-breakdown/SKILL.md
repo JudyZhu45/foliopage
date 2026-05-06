@@ -22,7 +22,7 @@ to disk automatically — do not read or write `data_cache.json`.
 | `get_basic_info(code)` |
 | `get_revenue_breakdown(code)` |
 | `get_financials(code, period="annual")` |
-| `get_peers(code, n=10)` |
+| `get_peers(code, n=6)` |
 
 If `revbk` returns `available: false`, set `"available": false` in the JSON
 and skip all product/region fields. The renderer will show an unavailability notice.
@@ -43,45 +43,19 @@ set the metric value to `null` (server skips nulls gracefully).
 
 ```json
 {
-  "meta": {
-    "stock_code": "<code>",
-    "stock_name": "<name>",
-    "skill": "business-breakdown",
-    "as_of": "<ISO datetime from basic_info>"
-  },
-  "hero": {
-    "industry": "<sector from basic_info>",
-    "exchange": "<SH|SZ|HK|…>",
-    "as_of": "<date string>"
-  },
+  "meta": {"stock_code": "<code>", "stock_name": "<name>", "skill": "business-breakdown", "as_of": "<ISO datetime>"},
+  "hero": {"industry": "<sector>", "exchange": "<SH|SZ|HK|…>", "as_of": "<date>"},
   "available": true,
-  "report_year": <int or null>,
-  "business_overview": "<150-200 words: what the company sells, who buys, what drives pricing. ≥1 [[code|name]] link>",
-  "by_product": [
-    {
-      "segment": "<product/business name>",
-      "revenue_yi": <亿元 or null>,
-      "revenue_pct": <% share or null>,
-      "gross_margin_pct": <% or null>,
-      "yoy_pct": <% or null>
-    }
-  ],
-  "by_region": [
-    {
-      "region": "<region name>",
-      "revenue_yi": <亿元 or null>,
-      "revenue_pct": <% or null>,
-      "yoy_pct": <% or null>
-    }
-  ],
-  "top_segment": "<name of largest segment>",
-  "top_segment_pct": <% or null>,
+  "report_year": null,
+  "business_overview": "<150-200 words: what sold, who buys, pricing drivers. ≥1 [[code|name]] link>",
+  "by_product": [{"segment": "<name>", "revenue_yi": null, "revenue_pct": null, "gross_margin_pct": null, "yoy_pct": null}],
+  "by_region": [{"region": "<name>", "revenue_yi": null, "revenue_pct": null, "yoy_pct": null}],
+  "top_segment": "<largest segment name>",
+  "top_segment_pct": null,
   "peer_bar_metric": "毛利率(%)",
-  "peer_bar_items": [
-    {"code": "<code>", "name": "<name>", "毛利率(%)": <gross_margin_pct or null>}
-  ],
-  "structural_analysis": "<3-4 paragraphs separated by \\n\\n: concentration risk, margin mix, growth engine. ≥2 [[code|name]] links>",
-  "pull_quote": "<most striking segment-level data point>"
+  "peer_bar_items": [{"code": "<code>", "name": "<name>", "毛利率(%)": null}],
+  "structural_analysis": "<3-4 paragraphs \\n\\n: concentration risk, margin mix, growth engine. ≥2 [[code|name]] links>",
+  "pull_quote": "<striking segment data point>"
 }
 ```
 
@@ -99,7 +73,7 @@ set the metric value to `null` (server skips nulls gracefully).
      "stock_name": "<name>",
      "skill_used": "business-breakdown",
      "summary": "Revenue breakdown by product and region, peer margin comparison",
-     "data_keys_used": ["basic:<code>", "fin:<code>:annual", "peers:<code>:10"],
+     "data_keys_used": ["basic:<code>", "fin:<code>:annual", "peers:<code>:6"],
      "parent_request_id": "<from CLICKED_CONTEXT or page_stack>",
      "created_at": "<ISO datetime>"
    }

@@ -41,6 +41,8 @@ def build_drilldown_prompt(
     clicked_context: dict | str = "",
     parent_request_id: str = "",
     hint: str = "",
+    stock_code: str = "",
+    stock_name: str = "",
 ) -> str:
     """Prompt for a metric drilldown page."""
     if isinstance(clicked_context, dict):
@@ -54,9 +56,12 @@ def build_drilldown_prompt(
         f"CLICKED_CONTEXT: {clicked_context}",
         f"PARENT_PAGE: {parent_request_id}",
         f"HINT: {hint}",
-        "",
-        f"Follow CLAUDE.md. Use the {skill} skill.",
     ]
+    if stock_code:
+        lines.append(f"STOCK_CODE: {stock_code}")
+    if stock_name:
+        lines.append(f"STOCK_NAME: {stock_name}")
+    lines += ["", f"Follow CLAUDE.md. Use the {skill} skill."]
     return "\n".join(lines)
 
 
@@ -73,8 +78,9 @@ def build_peer_switch_prompt(
     lines = [
         "ACTION: peer_switch",
         f"REQUEST_ID: {request_id}",
-        f"STOCK_QUERY: {peer_code}",
+        f"STOCK_CODE: {peer_code}",
         f"STOCK_NAME: {peer_name}",
+        f"STOCK_QUERY: {peer_code}",
         f"ORIGINAL_QUERY: {original_query}",
         f"PARENT_PAGE: {parent_request_id}",
         f"HINT: {hint}",

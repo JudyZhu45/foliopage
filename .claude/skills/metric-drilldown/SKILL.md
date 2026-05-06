@@ -33,60 +33,46 @@ Tool servers cache results to disk automatically — do not maintain
 | profitability | `get_financials(code, period="annual")` |
 | income | `get_financials(code, period="annual")` |
 | income | `get_financials(code, period="quarterly")` |
-| price | `get_kline(code, range="5Y")` |
 | all | `get_peers(code, n=5)` |
 
 ---
 
 ## Step 3 — Write output JSON
 
-Write to `output/data-<REQUEST_ID>.json` using Bash + json.dumps.
+Use the **Write tool** to write a Python script `gen_json.py`, then run it:
+```bash
+python3 gen_json.py && rm gen_json.py && echo "DONE"
+```
+The script must use `json.dumps(data, ensure_ascii=False, indent=2)` and write to
+`output/data-<REQUEST_ID>.json`.
 
 **Chart dispatch hints** (`metric_category` tells the server which chart to render):
 - `"valuation"` → server renders `pe_band_svg` (from `pe_history`) + `peer_bar_svg`
 - `"profitability"` or `"income"` → server renders `metric_sparkline_svg` + `peer_bar_svg`
-- `"price"` → server renders `kline_svg` (from `kline_bars`)
+- `"price"` → server renders `kline_svg` (fetched directly from cache — no `kline_bars` needed)
 
 **`pe_history`**: copy from `get_valuation().pe_history`. Include even if empty.
 **`sparkline_values`**: extract the relevant metric column across 5 annual periods,
   oldest first. For `gross_margin` → `gross_margin_pct` from each annual row.
-**`kline_bars`**: copy the full `bars` array from `get_kline()`.
 **`peer_bar_items`**: include subject + peers. Use the relevant metric value for each.
 
 ### JSON schema
 
 ```json
 {
-  "meta": {
-    "stock_code": "<code>",
-    "stock_name": "<name>",
-    "skill": "metric-drilldown",
-    "as_of": "<ISO datetime>"
-  },
-  "hero": {
-    "industry": "<sector>",
-    "exchange": "<SH|SZ|HK|…>"
-  },
+  "meta": {"stock_code": "<code>", "stock_name": "<name>", "skill": "metric-drilldown", "as_of": "<ISO datetime>"},
+  "hero": {"industry": "<sector>", "exchange": "<SH|SZ|HK|…>"},
   "metric_key": "<e.g. PE_TTM>",
   "metric_display": "<e.g. PE (TTM)>",
   "metric_category": "<valuation|profitability|income|price>",
-  "metric_current": <current value or null>,
-  "metric_1y_ago": <value 1 year ago or null>,
-  "metric_percentile": <integer or null>,
+  "metric_current": null, "metric_1y_ago": null, "metric_percentile": null,
   "pe_history": [{"date": "YYYY-MM-DD", "pe": 0.0}],
   "sparkline_values": [0.0, 0.0, 0.0, 0.0, 0.0],
-  "kline_bars": [
-    {"date": "YYYY-MM-DD", "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0, "volume": 0}
-  ],
-  "peer_bar_metric": "<display label matching metric_key>",
-  "peer_bar_items": [
-    {"code": "<code>", "name": "<name>", "<peer_bar_metric>": <value or null>}
-  ],
-  "history_narrative": "<2 paragraphs: current level in historical context + what drove prior extremes>",
+  "peer_bar_metric": "<display label>",
+  "peer_bar_items": [{"code": "<code>", "name": "<name>", "<metric>": null}],
+  "history_narrative": "<2 paragraphs: historical context + prior extremes>",
   "peer_narrative": "<1 paragraph: who leads, who trails, where subject sits>",
-  "related_peers": [
-    {"code": "<code>", "name": "<name>"}
-  ]
+  "related_peers": [{"code": "<code>", "name": "<name>"}]
 }
 ```
 
